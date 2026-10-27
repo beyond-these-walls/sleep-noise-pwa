@@ -33,6 +33,8 @@
     <audio id="audio-pink-noise" src="audio/pink-noise.mp3" loop preload="auto" playsinline></audio>
     <audio id="audio-rain-thunder" src="audio/rain-thunder.mp3" loop preload="auto" playsinline></audio>
     <audio id="audio-gentle-rain" src="audio/gentle-rain.mp3" loop preload="auto" playsinline></audio>
+    <!-- Non-looping episodic podcast audio element -->
+    <audio id="audio-podcast" preload="metadata" playsinline></audio>
   </div>
 
   <div class="app-layout">
@@ -136,6 +138,115 @@
       </div>
     </section>
 
+    <!-- Podcast Bedtime Queue Section -->
+    <section class="podcast-panel" aria-labelledby="podcastHeading">
+      <div class="podcast-panel-header">
+        <div class="panel-header-title">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+          <h2 id="podcastHeading">Podcast Bedtime Queue</h2>
+        </div>
+        <button id="openPodcastModalBtn" class="btn-queue-action" type="button" aria-haspopup="dialog" aria-controls="podcastModal">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span>Queue Podcast</span>
+        </button>
+      </div>
+
+      <!-- Transition Banner (Active when episode ends and 4s fade-in triggers) -->
+      <div id="podcastTransitionNotice" class="transition-notice hidden" role="status" aria-live="polite">
+        <span class="pulse-icon" aria-hidden="true">✨</span>
+        <span id="podcastTransitionText">Episode finished &bull; Fading in ambient sleep sounds over 4s...</span>
+      </div>
+
+      <!-- Empty State -->
+      <div id="podcastEmptyState" class="podcast-empty-state">
+        <div class="empty-icon" aria-hidden="true">🎙️</div>
+        <div class="empty-content">
+          <p class="empty-title">Fall asleep to a story or podcast</p>
+          <p class="empty-desc">When the episode finishes, your selected sleep sound automatically loops and fades in over 4s without dropping audio session.</p>
+        </div>
+        <button id="quickSampleBtn" class="btn-sample-play" type="button">
+          <span>Try Demo Episode (15s test)</span>
+        </button>
+      </div>
+
+      <!-- Active Episode Card (Hidden when no episode is loaded) -->
+      <div id="podcastActiveCard" class="podcast-card hidden">
+        <div class="podcast-meta-row">
+          <img id="podcastCoverImg" class="podcast-cover" src="icons/icon-192.png" alt="Podcast cover art" width="52" height="52">
+          <div class="podcast-text-group">
+            <h3 id="podcastEpisodeTitle" class="podcast-ep-title">No episode loaded</h3>
+            <p id="podcastShowName" class="podcast-show-name">Bedtime Queue</p>
+          </div>
+          <button id="podcastRemoveBtn" class="btn-icon-subtle" type="button" title="Remove episode from queue" aria-label="Remove episode">
+            ✕
+          </button>
+        </div>
+
+        <!-- Scrubber Progress Bar -->
+        <div class="podcast-scrubber-box">
+          <input type="range" id="podcastSeeker" min="0" max="100" value="0" step="0.2" aria-label="Podcast scrub slider">
+          <div class="scrubber-times">
+            <span id="podcastCurTime">0:00</span>
+            <span id="podcastDuration">0:00</span>
+          </div>
+        </div>
+
+        <!-- Controls Row -->
+        <div class="podcast-controls-row">
+          <button id="podcastRwBtn" class="btn-podcast-ctrl" type="button" title="Rewind 15 seconds" aria-label="Rewind 15 seconds">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M1 4v6h6M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+              <text x="12" y="15" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-weight="bold">15</text>
+            </svg>
+          </button>
+
+          <button id="podcastPlayBtn" class="btn-podcast-play" type="button" aria-label="Play or pause podcast">
+            <svg id="podcastPlayIcon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            <svg id="podcastPauseIcon" class="hidden" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <rect x="6" y="4" width="4" height="16"/>
+              <rect x="14" y="4" width="4" height="16"/>
+            </svg>
+          </button>
+
+          <button id="podcastFfBtn" class="btn-podcast-ctrl" type="button" title="Fast-forward 30 seconds" aria-label="Fast forward 30 seconds">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+              <text x="12" y="15" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-weight="bold">30</text>
+            </svg>
+          </button>
+
+          <button id="podcastEndNowBtn" class="btn-skip-ambient" type="button" title="Test the end-of-episode 4s ambient fade-in transition">
+            <span>Skip to Sleep Sound (Test 4s Fade) &rarr;</span>
+          </button>
+        </div>
+
+        <!-- Target Ambient Sound Selector -->
+        <div class="podcast-target-row">
+          <label for="podcastTransitionTarget" class="target-label">
+            <span>When episode ends, fade into:</span>
+          </label>
+          <select id="podcastTransitionTarget" class="target-select" aria-label="Soundscape to fade in after episode">
+            <option value="deep-rest">🛌 Deep Rest (Brown Noise + Rain)</option>
+            <option value="rain">🌧️ Calming Rain</option>
+            <option value="brown-noise">🟤 Brown Noise</option>
+            <option value="white-noise">⚪ White Noise</option>
+            <option value="cozy-storm">⛈️ Cozy Thunder &amp; Rain</option>
+            <option value="current">Current Active Sound Mix</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
     <!-- Sleep Timer Section -->
     <section class="timer-panel" aria-labelledby="timerHeading">
       <div class="panel-header">
@@ -209,6 +320,103 @@
       <p class="footer-copy">&copy; 2026 Sleep Noise PWA &bull; Offline &amp; Private</p>
     </footer>
   </div>
+
+  <!-- Add Podcast / Audio Dialog Modal -->
+  <dialog id="podcastModal" class="podcast-modal" closedby="any">
+    <div class="modal-header">
+      <div class="modal-title-box">
+        <h2 class="modal-title">Queue a Bedtime Podcast</h2>
+        <p class="modal-subtitle">Episodic stream or RSS feed &bull; Fades into ambient sounds when finished</p>
+      </div>
+      <form method="dialog">
+        <button class="btn-close-modal" type="submit" aria-label="Close dialog">✕</button>
+      </form>
+    </div>
+
+    <!-- Tab Switcher -->
+    <div class="modal-tabs" role="tablist" aria-label="Podcast input methods">
+      <button id="tabPresetsBtn" class="modal-tab-btn active" type="button" role="tab" aria-selected="true" aria-controls="tabPresets">
+        Bedtime Stories
+      </button>
+      <button id="tabRssBtn" class="modal-tab-btn" type="button" role="tab" aria-selected="false" aria-controls="tabRss">
+        RSS Feed URL
+      </button>
+      <button id="tabCustomBtn" class="modal-tab-btn" type="button" role="tab" aria-selected="false" aria-controls="tabCustom">
+        Custom Audio URL
+      </button>
+    </div>
+
+    <!-- Tab 1: Curated Bedtime Presets -->
+    <div id="tabPresets" class="modal-tab-panel" role="tabpanel" aria-labelledby="tabPresetsBtn">
+      <p class="tab-help">Select a sleep episode to queue before your ambient noise:</p>
+      <div class="presets-list">
+        <div class="podcast-preset-card">
+          <div class="preset-badge highlight">⚡ Rapid Demo (15s)</div>
+          <h4>Bedtime Melodic Chimes (Demo Episode)</h4>
+          <p>15-second relaxing chord sequence designed to easily test the 4-second crossfade to ambient sleep sounds.</p>
+          <button class="btn-load-preset" type="button" data-preset-id="demo-story">
+            Load &amp; Play Demo
+          </button>
+        </div>
+
+        <div class="podcast-preset-card">
+          <div class="preset-badge">Bedtime Story</div>
+          <h4>Nothing Much Happens: Bedtime Stories</h4>
+          <p>Soothing stories where nothing much happens, helping busy minds unwind into deep rest.</p>
+          <button class="btn-load-preset" type="button" data-preset-id="nothing-much">
+            Load Recent Episode
+          </button>
+        </div>
+
+        <div class="podcast-preset-card">
+          <div class="preset-badge">Sleep Tales</div>
+          <h4>Sleepy: Classic Bedtime Stories</h4>
+          <p>Warm, baritone narration reading classic literature to lull you gently into sleep.</p>
+          <button class="btn-load-preset" type="button" data-preset-id="sleepy">
+            Load Recent Episode
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 2: RSS Feed Input -->
+    <div id="tabRss" class="modal-tab-panel hidden" role="tabpanel" aria-labelledby="tabRssBtn">
+      <p class="tab-help">Paste any podcast RSS feed URL to browse and queue episodes:</p>
+      <div class="input-row">
+        <input type="url" id="rssFeedInput" class="text-input" placeholder="https://example.com/podcast/feed.xml" aria-label="Podcast RSS Feed URL">
+        <button id="fetchRssBtn" class="btn-submit-action" type="button">
+          <span>Fetch Episodes</span>
+        </button>
+      </div>
+
+      <div id="rssStatusMessage" class="rss-status-msg hidden"></div>
+
+      <!-- Loaded episodes list -->
+      <div id="rssEpisodesContainer" class="rss-episodes-list hidden">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+
+    <!-- Tab 3: Custom Audio URL -->
+    <div id="tabCustom" class="modal-tab-panel hidden" role="tabpanel" aria-labelledby="tabCustomBtn">
+      <p class="tab-help">Stream any direct episodic audio file (.mp3, .m4a, .aac) before your sleep sounds:</p>
+      <div class="form-group">
+        <label for="customAudioUrl">Audio Stream URL:</label>
+        <input type="url" id="customAudioUrl" class="text-input" placeholder="https://example.com/audio/episode.mp3" required>
+      </div>
+      <div class="form-group">
+        <label for="customAudioTitle">Episode Title (Optional):</label>
+        <input type="text" id="customAudioTitle" class="text-input" placeholder="Bedtime Meditation Part 1">
+      </div>
+      <div class="form-group">
+        <label for="customPodcastName">Podcast / Show Name (Optional):</label>
+        <input type="text" id="customPodcastName" class="text-input" placeholder="Evening Relaxation">
+      </div>
+      <button id="loadCustomAudioBtn" class="btn-submit-action full-width" type="button">
+        Load Episode &amp; Queue
+      </button>
+    </div>
+  </dialog>
 
   <script src="app.js"></script>
 </body>

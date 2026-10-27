@@ -61,13 +61,24 @@ const state = {
   masterMuted: false,
   isPlaying: false,
   bedMode: false,
-  fadeMultiplier: 1.0, // Used by sleep timer smooth fadeout
+  fadeMultiplier: 1.0, // Used by sleep timer & podcast crossfade
   sounds: {},
   timer: {
     durationMinutes: 0, // 0 = continuous
     endTime: null,
     intervalId: null,
     fadeSeconds: 60
+  },
+  podcast: {
+    audioEl: null,
+    isActive: false,
+    isPlaying: false,
+    episodeTitle: '',
+    podcastName: '',
+    coverUrl: 'icons/icon-192.png',
+    audioUrl: '',
+    targetMix: 'deep-rest',
+    isFadingToSleep: false
   }
 };
 
@@ -79,6 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
   cacheDOM();
   loadStoredPreferences();
   initAudioElements();
+  initPodcastModule();
   renderSoundCards();
   initMediaSession();
   bindEvents();
@@ -107,7 +119,47 @@ function cacheDOM() {
     pwaInstallCard: document.getElementById('pwaInstallCard'),
     pwaInstallBtn: document.getElementById('pwaInstallBtn'),
     pwaDismissBtn: document.getElementById('pwaDismissBtn'),
-    offlineBadge: document.getElementById('offlineBadge')
+    offlineBadge: document.getElementById('offlineBadge'),
+
+    // Podcast Queue DOM Elements
+    audioPodcast: document.getElementById('audio-podcast'),
+    openPodcastModalBtn: document.getElementById('openPodcastModalBtn'),
+    podcastModal: document.getElementById('podcastModal'),
+    podcastTransitionNotice: document.getElementById('podcastTransitionNotice'),
+    podcastTransitionText: document.getElementById('podcastTransitionText'),
+    podcastEmptyState: document.getElementById('podcastEmptyState'),
+    podcastActiveCard: document.getElementById('podcastActiveCard'),
+    quickSampleBtn: document.getElementById('quickSampleBtn'),
+    podcastCoverImg: document.getElementById('podcastCoverImg'),
+    podcastEpisodeTitle: document.getElementById('podcastEpisodeTitle'),
+    podcastShowName: document.getElementById('podcastShowName'),
+    podcastRemoveBtn: document.getElementById('podcastRemoveBtn'),
+    podcastSeeker: document.getElementById('podcastSeeker'),
+    podcastCurTime: document.getElementById('podcastCurTime'),
+    podcastDuration: document.getElementById('podcastDuration'),
+    podcastRwBtn: document.getElementById('podcastRwBtn'),
+    podcastPlayBtn: document.getElementById('podcastPlayBtn'),
+    podcastPlayIcon: document.getElementById('podcastPlayIcon'),
+    podcastPauseIcon: document.getElementById('podcastPauseIcon'),
+    podcastFfBtn: document.getElementById('podcastFfBtn'),
+    podcastEndNowBtn: document.getElementById('podcastEndNowBtn'),
+    podcastTransitionTarget: document.getElementById('podcastTransitionTarget'),
+
+    // Modal Tabs & Inputs
+    tabPresetsBtn: document.getElementById('tabPresetsBtn'),
+    tabRssBtn: document.getElementById('tabRssBtn'),
+    tabCustomBtn: document.getElementById('tabCustomBtn'),
+    tabPresets: document.getElementById('tabPresets'),
+    tabRss: document.getElementById('tabRss'),
+    tabCustom: document.getElementById('tabCustom'),
+    rssFeedInput: document.getElementById('rssFeedInput'),
+    fetchRssBtn: document.getElementById('fetchRssBtn'),
+    rssStatusMessage: document.getElementById('rssStatusMessage'),
+    rssEpisodesContainer: document.getElementById('rssEpisodesContainer'),
+    customAudioUrl: document.getElementById('customAudioUrl'),
+    customAudioTitle: document.getElementById('customAudioTitle'),
+    customPodcastName: document.getElementById('customPodcastName'),
+    loadCustomAudioBtn: document.getElementById('loadCustomAudioBtn')
   };
 }
 
@@ -638,38 +690,415 @@ function updateTimerTick() {
 }
 
 /**
+ * ==========================================================================
+ * Podcast Bedtime Queue Module
+ * Supports custom audio URLs, RSS feeds, ended event transition,
+ * 4-second ambient volume fade-in, and seamless MediaSession lock-screen updates.
+ * ==========================================================================
+ */
+
+const CURATED_PODCASTS = {
+  'demo-story': {
+    title: 'Bedtime Melodic Chimes (15s Test)',
+    podcastName: 'Sleep Demo Audio',
+    audioUrl: 'audio/bedtime-story-sample.mp3',
+    coverUrl: 'icons/icon-192.png'
+  },
+  'nothing-much': {
+    title: 'The Rain on the Skylight',
+    podcastName: 'Nothing Much Happens',
+    feedUrl: 'https://feeds.megaphone.fm/nothingmuchhappens',
+    fallbackAudio: 'audio/bedtime-story-sample.mp3',
+    coverUrl: 'icons/icon-192.png'
+  },
+  'sleepy': {
+    title: 'The Secret Garden - Part 1',
+    podcastName: 'Sleepy Bedtime Stories',
+    feedUrl: 'https://feeds.megaphone.fm/sleepy',
+    fallbackAudio: 'audio/bedtime-story-sample.mp3',
+    coverUrl: 'icons/icon-192.png'
+  }
+};
+
+function initPodcastModule() {
+  if (!DOM.audioPodcast) return;
+
+  state.podcast.audioEl = DOM.audioPodcast;
+
+  // Track playback state changes
+  DOM.audioPodcast.addEventListener('play', () => {
+    state.podcast.isPlaying = true;
+    updatePodcastUI();
+
+    // Pause any ambient sounds so podcast plays cleanly alone
+    pauseAllSounds();
+    state.isPlaying = false;
+    updateMasterUI();
+    updateMediaSession();
+  });
+
+  DOM.audioPodcast.addEventListener('pause', () => {
+    state.podcast.isPlaying = false;
+    updatePodcastUI();
+    updateMediaSession();
+  });
+
+  DOM.audioPodcast.addEventListener('timeupdate', () => {
+    if (!DOM.audioPodcast.duration) return;
+    const cur = DOM.audioPodcast.currentTime;
+    const dur = DOM.audioPodcast.duration;
+    if (DOM.podcastSeeker) {
+      DOM.podcastSeeker.value = (cur / dur) * 100;
+    }
+    if (DOM.podcastCurTime) {
+      DOM.podcastCurTime.textContent = formatDuration(cur);
+    }
+  });
+
+  DOM.audioPodcast.addEventListener('loadedmetadata', () => {
+    if (DOM.podcastDuration) {
+      DOM.podcastDuration.textContent = formatDuration(DOM.audioPodcast.duration);
+    }
+    if (DOM.podcastSeeker) {
+      DOM.podcastSeeker.value = 0;
+    }
+  });
+
+  // CRITICAL REQUIREMENT: Listen for ended event on the podcast audio element
+  DOM.audioPodcast.addEventListener('ended', () => {
+    console.log('[Podcast] audio ended event fired! Seamlessly fading in ambient sleep sounds over 4s...');
+    transitionPodcastToAmbient();
+  });
+}
+
+/**
+ * Automatically begin looping selected ambient sleep sound,
+ * fading volume in smoothly over 4 seconds, and updating mediaSession seamlessly.
+ */
+function transitionPodcastToAmbient() {
+  // 1. Mark podcast as finished
+  state.podcast.isPlaying = false;
+  state.podcast.isActive = false;
+  updatePodcastUI();
+
+  // 2. Determine target ambient sleep sound / mix
+  const target = DOM.podcastTransitionTarget ? DOM.podcastTransitionTarget.value : 'deep-rest';
+  activateTargetSleepMix(target);
+
+  // 3. Immediately start ambient audio with zero volume (fadeMultiplier = 0)
+  // Ensures mobile OS does not drop the background audio session!
+  state.fadeMultiplier = 0.0;
+  applyAllVolumes();
+  state.isPlaying = true;
+  playAllActiveSounds();
+  updateMasterUI();
+
+  // 4. Update navigator.mediaSession metadata so lock screen reflects the switch immediately
+  updateMediaSession();
+
+  // 5. Smoothly fade the sleep sound's volume in over 4 seconds (4000ms)
+  const FADE_IN_DURATION = 4000;
+  const startTimestamp = performance.now();
+  state.podcast.isFadingToSleep = true;
+
+  function fadeStep(now) {
+    const elapsed = now - startTimestamp;
+    const progress = Math.min(1.0, elapsed / FADE_IN_DURATION);
+
+    // Natural acoustic curve: sin(progress * PI / 2)
+    state.fadeMultiplier = Math.sin(progress * (Math.PI / 2));
+    applyAllVolumes();
+
+    if (progress < 1.0) {
+      requestAnimationFrame(fadeStep);
+    } else {
+      state.fadeMultiplier = 1.0;
+      state.podcast.isFadingToSleep = false;
+      applyAllVolumes();
+      console.log('[Podcast] 4-second ambient fade-in completed.');
+    }
+  }
+
+  requestAnimationFrame(fadeStep);
+
+  // 6. Show temporary UI notification banner
+  showPodcastTransitionNotice();
+}
+
+function activateTargetSleepMix(target) {
+  // Reset existing active sounds if switching
+  if (target !== 'current') {
+    Object.keys(state.sounds).forEach((id) => {
+      state.sounds[id].isActive = false;
+    });
+  }
+
+  if (target === 'deep-rest') {
+    state.sounds['brown-noise'].isActive = true;
+    state.sounds['brown-noise'].volume = 80;
+    state.sounds['rain'].isActive = true;
+    state.sounds['rain'].volume = 75;
+  } else if (target === 'rain') {
+    state.sounds['rain'].isActive = true;
+    state.sounds['rain'].volume = 80;
+  } else if (target === 'brown-noise') {
+    state.sounds['brown-noise'].isActive = true;
+    state.sounds['brown-noise'].volume = 80;
+  } else if (target === 'white-noise') {
+    state.sounds['white-noise'].isActive = true;
+    state.sounds['white-noise'].volume = 70;
+  } else if (target === 'cozy-storm') {
+    state.sounds['rain'].isActive = true;
+    state.sounds['rain'].volume = 70;
+    state.sounds['rain-thunder'].isActive = true;
+    state.sounds['rain-thunder'].volume = 65;
+    state.sounds['brown-noise'].isActive = true;
+    state.sounds['brown-noise'].volume = 40;
+  } else if (target === 'current') {
+    const hasAny = Object.values(state.sounds).some((s) => s.isActive);
+    if (!hasAny) {
+      state.sounds['brown-noise'].isActive = true;
+      state.sounds['rain'].isActive = true;
+    }
+  }
+
+  renderSoundCards();
+}
+
+function showPodcastTransitionNotice() {
+  if (!DOM.podcastTransitionNotice) return;
+  DOM.podcastTransitionNotice.classList.remove('hidden');
+  setTimeout(() => {
+    DOM.podcastTransitionNotice.classList.add('hidden');
+  }, 6500);
+}
+
+function updatePodcastUI() {
+  if (!DOM.podcastActiveCard || !DOM.podcastEmptyState) return;
+
+  if (state.podcast.isActive) {
+    DOM.podcastEmptyState.classList.add('hidden');
+    DOM.podcastActiveCard.classList.remove('hidden');
+
+    if (DOM.podcastEpisodeTitle) {
+      DOM.podcastEpisodeTitle.textContent = state.podcast.episodeTitle || 'Bedtime Episode';
+    }
+    if (DOM.podcastShowName) {
+      DOM.podcastShowName.textContent = state.podcast.podcastName || 'Bedtime Queue';
+    }
+    if (DOM.podcastCoverImg) {
+      DOM.podcastCoverImg.src = state.podcast.coverUrl || 'icons/icon-192.png';
+    }
+
+    if (DOM.podcastPlayIcon && DOM.podcastPauseIcon) {
+      if (state.podcast.isPlaying) {
+        DOM.podcastPlayIcon.classList.add('hidden');
+        DOM.podcastPauseIcon.classList.remove('hidden');
+      } else {
+        DOM.podcastPlayIcon.classList.remove('hidden');
+        DOM.podcastPauseIcon.classList.add('hidden');
+      }
+    }
+  } else {
+    DOM.podcastEmptyState.classList.remove('hidden');
+    DOM.podcastActiveCard.classList.add('hidden');
+  }
+}
+
+function queuePodcastEpisode(options) {
+  state.podcast.isActive = true;
+  state.podcast.episodeTitle = options.title || 'Bedtime Episode';
+  state.podcast.podcastName = options.podcastName || 'Bedtime Story';
+  state.podcast.coverUrl = options.coverUrl || 'icons/icon-192.png';
+  state.podcast.audioUrl = options.audioUrl;
+
+  DOM.audioPodcast.src = options.audioUrl;
+  DOM.audioPodcast.currentTime = 0;
+  DOM.audioPodcast.load();
+  DOM.audioPodcast.play().catch((err) => {
+    console.warn('[Podcast] Play deferred or blocked:', err);
+  });
+
+  updatePodcastUI();
+  updateMediaSession();
+}
+
+function formatDuration(sec) {
+  if (!sec || isNaN(sec)) return '0:00';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/**
+ * Fetch and parse podcast RSS XML feed with CORS proxy fallbacks
+ */
+async function fetchRssFeed(feedUrl) {
+  if (!feedUrl) return;
+
+  DOM.rssStatusMessage.classList.remove('hidden', 'error');
+  DOM.rssStatusMessage.classList.add('loading');
+  DOM.rssStatusMessage.textContent = 'Fetching and parsing podcast RSS feed...';
+  DOM.rssEpisodesContainer.classList.add('hidden');
+  DOM.rssEpisodesContainer.innerHTML = '';
+
+  let xmlText = null;
+
+  // Direct fetch with fallback to reliable CORS proxies for client-side RSS loading
+  const fetchUrls = [
+    feedUrl,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl)}`,
+    `https://corsproxy.io/?url=${encodeURIComponent(feedUrl)}`
+  ];
+
+  for (const u of fetchUrls) {
+    try {
+      const res = await fetch(u, { headers: { 'Accept': 'application/rss+xml, application/xml, text/xml' } });
+      if (res.ok) {
+        const text = await res.text();
+        if (text && (text.includes('<rss') || text.includes('<channel'))) {
+          xmlText = text;
+          break;
+        }
+      }
+    } catch (e) {
+      // Try next proxy
+    }
+  }
+
+  if (!xmlText) {
+    DOM.rssStatusMessage.classList.remove('loading');
+    DOM.rssStatusMessage.classList.add('error');
+    DOM.rssStatusMessage.textContent = 'Could not load RSS feed. Please check the URL or try another feed.';
+    return;
+  }
+
+  try {
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+    
+    if (xmlDoc.querySelector('parsererror')) {
+      throw new Error('XML parsing failed');
+    }
+
+    const channel = xmlDoc.querySelector('channel');
+    const podcastTitle = channel?.querySelector('title')?.textContent?.trim() || 'Bedtime Podcast';
+    let podcastImage = channel?.querySelector('image > url')?.textContent?.trim() ||
+                       channel?.getElementsByTagName('itunes:image')[0]?.getAttribute('href') ||
+                       'icons/icon-192.png';
+
+    const items = Array.from(xmlDoc.querySelectorAll('item')).slice(0, 15);
+
+    if (items.length === 0) {
+      DOM.rssStatusMessage.classList.remove('loading');
+      DOM.rssStatusMessage.classList.add('error');
+      DOM.rssStatusMessage.textContent = 'No playable episodes found in this feed.';
+      return;
+    }
+
+    DOM.rssStatusMessage.classList.add('hidden');
+    DOM.rssEpisodesContainer.classList.remove('hidden');
+
+    items.forEach((item) => {
+      const epTitle = item.querySelector('title')?.textContent?.trim() || 'Untitled Episode';
+      const enclosure = item.querySelector('enclosure[url]');
+      const audioUrl = enclosure ? enclosure.getAttribute('url') : null;
+      const pubDate = item.querySelector('pubDate')?.textContent?.trim() || '';
+      const dateStr = pubDate ? new Date(pubDate).toLocaleDateString() : '';
+
+      if (!audioUrl) return;
+
+      const epCard = document.createElement('div');
+      epCard.className = 'rss-ep-item';
+      epCard.innerHTML = `
+        <div class="rss-ep-info">
+          <div class="rss-ep-title" title="${escapeHtml(epTitle)}">${escapeHtml(epTitle)}</div>
+          <div class="rss-ep-meta">${escapeHtml(podcastTitle)} &bull; ${dateStr}</div>
+        </div>
+        <button class="btn-ep-play" type="button">Queue &amp; Play</button>
+      `;
+
+      epCard.querySelector('.btn-ep-play').addEventListener('click', () => {
+        queuePodcastEpisode({
+          title: epTitle,
+          podcastName: podcastTitle,
+          coverUrl: podcastImage,
+          audioUrl: audioUrl
+        });
+        if (DOM.podcastModal) DOM.podcastModal.close();
+      });
+
+      DOM.rssEpisodesContainer.appendChild(epCard);
+    });
+
+  } catch (err) {
+    console.error('[RSS] Parsing error:', err);
+    DOM.rssStatusMessage.classList.remove('loading');
+    DOM.rssStatusMessage.classList.add('error');
+    DOM.rssStatusMessage.textContent = 'Failed to parse RSS XML. Try a direct audio URL instead.';
+  }
+}
+
+/**
  * navigator.mediaSession API Integration
  * Enables mobile lock-screen & notification center play/pause controls
+ * Seamlessly handles transition between podcast and ambient sleep sounds
  */
 function initMediaSession() {
   if (!('mediaSession' in navigator)) return;
 
-  // Register action handlers
-  try {
-    navigator.mediaSession.setActionHandler('play', () => {
-      handleMasterToggle();
-    });
-
-    navigator.mediaSession.setActionHandler('pause', () => {
-      handleMasterToggle();
-    });
-
-    navigator.mediaSession.setActionHandler('stop', () => {
-      pauseAllSounds();
-      state.isPlaying = false;
-      updateMasterUI();
-      updateMediaSession();
-    });
-  } catch (err) {
-    console.warn('[MediaSession] Handler setup warning:', err);
-  }
-
+  // Initial update
   updateMediaSession();
 }
 
 function updateMediaSession() {
   if (!('mediaSession' in navigator)) return;
 
+  // 1. If Podcast is actively playing or queued:
+  if (state.podcast.isPlaying || (state.podcast.isActive && !state.isPlaying)) {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: state.podcast.episodeTitle || 'Bedtime Podcast',
+      artist: state.podcast.podcastName || 'Sleep Podcast Queue',
+      album: 'Bedtime Stories & Rest',
+      artwork: [
+        { src: state.podcast.coverUrl || 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+        { src: state.podcast.coverUrl || 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }
+      ]
+    });
+
+    navigator.mediaSession.playbackState = state.podcast.isPlaying ? 'playing' : 'paused';
+
+    // Podcast lock screen controls:
+    navigator.mediaSession.setActionHandler('play', () => {
+      DOM.audioPodcast.play();
+    });
+    navigator.mediaSession.setActionHandler('pause', () => {
+      DOM.audioPodcast.pause();
+    });
+    navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+      const skip = (details && details.seekOffset) || 15;
+      DOM.audioPodcast.currentTime = Math.max(0, DOM.audioPodcast.currentTime - skip);
+    });
+    navigator.mediaSession.setActionHandler('seekforward', (details) => {
+      const skip = (details && details.seekOffset) || 30;
+      DOM.audioPodcast.currentTime = Math.min(DOM.audioPodcast.duration, DOM.audioPodcast.currentTime + skip);
+    });
+    navigator.mediaSession.setActionHandler('stop', () => {
+      DOM.audioPodcast.pause();
+      DOM.audioPodcast.currentTime = 0;
+      state.podcast.isPlaying = false;
+      updatePodcastUI();
+      navigator.mediaSession.playbackState = 'paused';
+    });
+    return;
+  }
+
+  // 2. Ambient Sleep Sound Controls (when podcast is not active):
   const activeNames = SOUNDS_CONFIG
     .filter((cfg) => state.sounds[cfg.id]?.isActive)
     .map((cfg) => cfg.name);
@@ -689,6 +1118,21 @@ function updateMediaSession() {
   });
 
   navigator.mediaSession.playbackState = state.isPlaying ? 'playing' : 'paused';
+
+  navigator.mediaSession.setActionHandler('play', () => {
+    handleMasterToggle();
+  });
+  navigator.mediaSession.setActionHandler('pause', () => {
+    handleMasterToggle();
+  });
+  navigator.mediaSession.setActionHandler('seekbackward', null);
+  navigator.mediaSession.setActionHandler('seekforward', null);
+  navigator.mediaSession.setActionHandler('stop', () => {
+    pauseAllSounds();
+    state.isPlaying = false;
+    updateMasterUI();
+    updateMediaSession();
+  });
 }
 
 /**
@@ -762,6 +1206,164 @@ function bindEvents() {
       setSleepTimer(min);
     });
   });
+
+  // Podcast Queue Listeners
+  if (DOM.openPodcastModalBtn && DOM.podcastModal) {
+    DOM.openPodcastModalBtn.addEventListener('click', () => {
+      DOM.podcastModal.showModal();
+    });
+
+    // Light-dismiss click outside fallback
+    if (!('closedBy' in HTMLDialogElement.prototype)) {
+      DOM.podcastModal.addEventListener('click', (e) => {
+        const rect = DOM.podcastModal.getBoundingClientRect();
+        if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+          DOM.podcastModal.close();
+        }
+      });
+    }
+  }
+
+  if (DOM.quickSampleBtn) {
+    DOM.quickSampleBtn.addEventListener('click', () => {
+      queuePodcastEpisode(CURATED_PODCASTS['demo-story']);
+    });
+  }
+
+  if (DOM.podcastPlayBtn) {
+    DOM.podcastPlayBtn.addEventListener('click', () => {
+      if (!DOM.audioPodcast.src) return;
+      if (DOM.audioPodcast.paused) {
+        DOM.audioPodcast.play();
+      } else {
+        DOM.audioPodcast.pause();
+      }
+    });
+  }
+
+  if (DOM.podcastRwBtn) {
+    DOM.podcastRwBtn.addEventListener('click', () => {
+      if (DOM.audioPodcast) {
+        DOM.audioPodcast.currentTime = Math.max(0, DOM.audioPodcast.currentTime - 15);
+      }
+    });
+  }
+
+  if (DOM.podcastFfBtn) {
+    DOM.podcastFfBtn.addEventListener('click', () => {
+      if (DOM.audioPodcast && DOM.audioPodcast.duration) {
+        DOM.audioPodcast.currentTime = Math.min(DOM.audioPodcast.duration, DOM.audioPodcast.currentTime + 30);
+      }
+    });
+  }
+
+  if (DOM.podcastSeeker) {
+    DOM.podcastSeeker.addEventListener('input', (e) => {
+      if (DOM.audioPodcast && DOM.audioPodcast.duration) {
+        const pct = parseFloat(e.target.value);
+        DOM.audioPodcast.currentTime = (pct / 100) * DOM.audioPodcast.duration;
+      }
+    });
+  }
+
+  if (DOM.podcastRemoveBtn) {
+    DOM.podcastRemoveBtn.addEventListener('click', () => {
+      DOM.audioPodcast.pause();
+      DOM.audioPodcast.src = '';
+      state.podcast.isActive = false;
+      state.podcast.isPlaying = false;
+      updatePodcastUI();
+      updateMediaSession();
+    });
+  }
+
+  // "Skip to Sleep Sound" test button: manually triggers transition
+  if (DOM.podcastEndNowBtn) {
+    DOM.podcastEndNowBtn.addEventListener('click', () => {
+      DOM.audioPodcast.pause();
+      transitionPodcastToAmbient();
+    });
+  }
+
+  // Modal tab switching
+  if (DOM.tabPresetsBtn && DOM.tabRssBtn && DOM.tabCustomBtn) {
+    const tabs = [
+      { btn: DOM.tabPresetsBtn, panel: DOM.tabPresets },
+      { btn: DOM.tabRssBtn, panel: DOM.tabRss },
+      { btn: DOM.tabCustomBtn, panel: DOM.tabCustom }
+    ];
+
+    tabs.forEach(({ btn, panel }) => {
+      btn.addEventListener('click', () => {
+        tabs.forEach((t) => {
+          t.btn.classList.remove('active');
+          t.btn.setAttribute('aria-selected', 'false');
+          t.panel.classList.add('hidden');
+        });
+        btn.classList.add('active');
+        btn.setAttribute('aria-selected', 'true');
+        panel.classList.remove('hidden');
+      });
+    });
+  }
+
+  // Modal Presets buttons
+  document.querySelectorAll('.btn-load-preset').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const pid = btn.getAttribute('data-preset-id');
+      const p = CURATED_PODCASTS[pid];
+      if (p) {
+        if (p.feedUrl) {
+          // Switch to RSS tab and auto fetch
+          DOM.tabRssBtn.click();
+          DOM.rssFeedInput.value = p.feedUrl;
+          fetchRssFeed(p.feedUrl);
+        } else {
+          // Direct audio
+          queuePodcastEpisode(p);
+          if (DOM.podcastModal) DOM.podcastModal.close();
+        }
+      }
+    });
+  });
+
+  // Modal RSS fetch button
+  if (DOM.fetchRssBtn && DOM.rssFeedInput) {
+    DOM.fetchRssBtn.addEventListener('click', () => {
+      const url = DOM.rssFeedInput.value.trim();
+      if (url) {
+        fetchRssFeed(url);
+      }
+    });
+    DOM.rssFeedInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        DOM.fetchRssBtn.click();
+      }
+    });
+  }
+
+  // Modal Custom Audio URL button
+  if (DOM.loadCustomAudioBtn && DOM.customAudioUrl) {
+    DOM.loadCustomAudioBtn.addEventListener('click', () => {
+      const url = DOM.customAudioUrl.value.trim();
+      const title = (DOM.customAudioTitle && DOM.customAudioTitle.value.trim()) || 'Custom Audio Stream';
+      const show = (DOM.customPodcastName && DOM.customPodcastName.value.trim()) || 'Bedtime Audio';
+
+      if (!url) {
+        alert('Please enter a valid audio URL (.mp3, .m4a, etc.)');
+        return;
+      }
+
+      queuePodcastEpisode({
+        title,
+        podcastName: show,
+        coverUrl: 'icons/icon-192.png',
+        audioUrl: url
+      });
+
+      if (DOM.podcastModal) DOM.podcastModal.close();
+    });
+  }
 
   // Online / Offline detection
   window.addEventListener('online', updateNetworkStatus);

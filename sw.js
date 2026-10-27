@@ -7,7 +7,8 @@ const AUDIO_ASSETS = [
   './audio/white-noise.mp3',
   './audio/pink-noise.mp3',
   './audio/rain-thunder.mp3',
-  './audio/gentle-rain.mp3'
+  './audio/gentle-rain.mp3',
+  './audio/bedtime-story-sample.mp3'
 ];
 
 const APP_SHELL_ASSETS = [
