@@ -14,7 +14,7 @@ A lightweight, mobile-first Progressive Web App (PWA) designed for deep, uninter
   - Master volume slider with proportional scaling.
   - Quick mix presets: *Deep Rest*, *Rainy Night*, *Cozy Thunder*, and *White Noise*.
 - **Podcast Bedtime Queue with 4-Second Crossfade**:
-  - Stream episodic bedtime stories or podcasts via custom audio URLs (.mp3, .m4a) or direct RSS feeds.
+  - Stream episodic podcasts via curated popular feeds (*Friday Night Comedy*, *No Such Thing As A Fish*, *BBC Inside Science*), custom RSS feed URLs, or direct audio streams (.mp3, .m4a).
   - When the podcast episode reaches its `ended` event, the player automatically begins looping your selected ambient sleep soundscape, fading volume in smoothly over 4 seconds.
   - Synchronous `navigator.mediaSession` updates transition the lock-screen metadata from podcast to ambient sounds without dropping background playback on mobile devices.
 - **Sleep Timer with Smooth Fadeout**:

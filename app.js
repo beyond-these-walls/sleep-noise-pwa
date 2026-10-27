@@ -129,7 +129,7 @@ function cacheDOM() {
     podcastTransitionText: document.getElementById('podcastTransitionText'),
     podcastEmptyState: document.getElementById('podcastEmptyState'),
     podcastActiveCard: document.getElementById('podcastActiveCard'),
-    quickSampleBtn: document.getElementById('quickSampleBtn'),
+    emptyQueueBtn: document.getElementById('emptyQueueBtn'),
     podcastCoverImg: document.getElementById('podcastCoverImg'),
     podcastEpisodeTitle: document.getElementById('podcastEpisodeTitle'),
     podcastShowName: document.getElementById('podcastShowName'),
@@ -698,24 +698,22 @@ function updateTimerTick() {
  */
 
 const CURATED_PODCASTS = {
-  'demo-story': {
-    title: 'Bedtime Melodic Chimes (15s Test)',
-    podcastName: 'Sleep Demo Audio',
-    audioUrl: 'audio/bedtime-story-sample.mp3',
+  'friday-night-comedy': {
+    title: 'Friday Night Comedy from BBC Radio 4',
+    podcastName: 'BBC Radio 4',
+    feedUrl: 'https://podcasts.files.bbci.co.uk/p02pc9pj.rss',
     coverUrl: 'icons/icon-192.png'
   },
-  'nothing-much': {
-    title: 'The Rain on the Skylight',
-    podcastName: 'Nothing Much Happens',
-    feedUrl: 'https://feeds.megaphone.fm/nothingmuchhappens',
-    fallbackAudio: 'audio/bedtime-story-sample.mp3',
+  'no-such-thing-as-a-fish': {
+    title: 'No Such Thing As A Fish',
+    podcastName: 'QI Researchers',
+    feedUrl: 'https://audioboom.com/channels/2399216.rss',
     coverUrl: 'icons/icon-192.png'
   },
-  'sleepy': {
-    title: 'The Secret Garden - Part 1',
-    podcastName: 'Sleepy Bedtime Stories',
-    feedUrl: 'https://feeds.megaphone.fm/sleepy',
-    fallbackAudio: 'audio/bedtime-story-sample.mp3',
+  'inside-science': {
+    title: 'BBC Inside Science',
+    podcastName: 'BBC Radio 4',
+    feedUrl: 'https://podcasts.files.bbci.co.uk/b036f7w2.rss',
     coverUrl: 'icons/icon-192.png'
   }
 };
@@ -1224,9 +1222,9 @@ function bindEvents() {
     }
   }
 
-  if (DOM.quickSampleBtn) {
-    DOM.quickSampleBtn.addEventListener('click', () => {
-      queuePodcastEpisode(CURATED_PODCASTS['demo-story']);
+  if (DOM.emptyQueueBtn && DOM.podcastModal) {
+    DOM.emptyQueueBtn.addEventListener('click', () => {
+      DOM.podcastModal.showModal();
     });
   }
 

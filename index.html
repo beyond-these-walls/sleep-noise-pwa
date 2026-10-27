@@ -171,11 +171,11 @@
       <div id="podcastEmptyState" class="podcast-empty-state">
         <div class="empty-icon" aria-hidden="true">🎙️</div>
         <div class="empty-content">
-          <p class="empty-title">Fall asleep to a story or podcast</p>
+          <p class="empty-title">Queue a podcast before sleep</p>
           <p class="empty-desc">When the episode finishes, your selected sleep sound automatically loops and fades in over 4s without dropping audio session.</p>
         </div>
-        <button id="quickSampleBtn" class="btn-sample-play" type="button">
-          <span>Try Demo Episode (15s test)</span>
+        <button id="emptyQueueBtn" class="btn-sample-play" type="button">
+          <span>Choose a Podcast to Queue</span>
         </button>
       </div>
 
@@ -338,44 +338,44 @@
     <!-- Tab Switcher -->
     <div class="modal-tabs" role="tablist" aria-label="Podcast input methods">
       <button id="tabPresetsBtn" class="modal-tab-btn active" type="button" role="tab" aria-selected="true" aria-controls="tabPresets">
-        Bedtime Stories
+        Popular Podcasts
       </button>
       <button id="tabRssBtn" class="modal-tab-btn" type="button" role="tab" aria-selected="false" aria-controls="tabRss">
-        RSS Feed URL
+        Custom RSS Feed
       </button>
       <button id="tabCustomBtn" class="modal-tab-btn" type="button" role="tab" aria-selected="false" aria-controls="tabCustom">
         Custom Audio URL
       </button>
     </div>
 
-    <!-- Tab 1: Curated Bedtime Presets -->
+    <!-- Tab 1: Popular Podcasts Presets -->
     <div id="tabPresets" class="modal-tab-panel" role="tabpanel" aria-labelledby="tabPresetsBtn">
-      <p class="tab-help">Select a sleep episode to queue before your ambient noise:</p>
+      <p class="tab-help">Choose a podcast to load recent episodes and queue before your sleep sounds:</p>
       <div class="presets-list">
         <div class="podcast-preset-card">
-          <div class="preset-badge highlight">⚡ Rapid Demo (15s)</div>
-          <h4>Bedtime Melodic Chimes (Demo Episode)</h4>
-          <p>15-second relaxing chord sequence designed to easily test the 4-second crossfade to ambient sleep sounds.</p>
-          <button class="btn-load-preset" type="button" data-preset-id="demo-story">
-            Load &amp; Play Demo
+          <div class="preset-badge highlight">BBC Radio 4</div>
+          <h4>Friday Night Comedy from BBC Radio 4</h4>
+          <p>Topical comedy, satirical stand-up, and sketches from BBC Radio 4 including The News Quiz and The Now Show.</p>
+          <button class="btn-load-preset" type="button" data-preset-id="friday-night-comedy">
+            Browse Episodes
           </button>
         </div>
 
         <div class="podcast-preset-card">
-          <div class="preset-badge">Bedtime Story</div>
-          <h4>Nothing Much Happens: Bedtime Stories</h4>
-          <p>Soothing stories where nothing much happens, helping busy minds unwind into deep rest.</p>
-          <button class="btn-load-preset" type="button" data-preset-id="nothing-much">
-            Load Recent Episode
+          <div class="preset-badge highlight">QI Researchers</div>
+          <h4>No Such Thing As A Fish</h4>
+          <p>Award-winning podcast where the researchers behind QI share the most bizarre, astonishing facts they found this week.</p>
+          <button class="btn-load-preset" type="button" data-preset-id="no-such-thing-as-a-fish">
+            Browse Episodes
           </button>
         </div>
 
         <div class="podcast-preset-card">
-          <div class="preset-badge">Sleep Tales</div>
-          <h4>Sleepy: Classic Bedtime Stories</h4>
-          <p>Warm, baritone narration reading classic literature to lull you gently into sleep.</p>
-          <button class="btn-load-preset" type="button" data-preset-id="sleepy">
-            Load Recent Episode
+          <div class="preset-badge highlight">BBC Radio 4</div>
+          <h4>BBC Inside Science</h4>
+          <p>Illuminating explorations and lively discussions of the latest science stories, discoveries, and controversies.</p>
+          <button class="btn-load-preset" type="button" data-preset-id="inside-science">
+            Browse Episodes
           </button>
         </div>
       </div>
