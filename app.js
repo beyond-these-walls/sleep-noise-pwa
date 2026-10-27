@@ -1430,14 +1430,37 @@ async function updateNetworkStatus() {
   }
 
   if (!navigator.onLine) {
-    DOM.offlineBadge.innerHTML = '<span class="status-dot" style="background:#fbbf24;box-shadow:0 0 6px rgba(251,191,36,0.6)"></span><span class="status-text">Airplane Mode (Playing Cached)</span>';
+    DOM.offlineBadge.classList.add('is-offline');
+    DOM.offlineBadge.innerHTML = `
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.25"/>
+        <line x1="2" y1="2" x2="22" y2="22"/>
+      </svg>
+      <span class="status-dot" aria-hidden="true"></span>
+    `;
     DOM.offlineBadge.title = 'Running offline in Airplane Mode. All sounds playback from local cache.';
+    DOM.offlineBadge.setAttribute('aria-label', 'Running offline in Airplane Mode');
   } else if (allAudioCached) {
-    DOM.offlineBadge.innerHTML = '<span class="status-dot"></span><span class="status-text">Offline Ready &bull; All Sounds Cached</span>';
+    DOM.offlineBadge.classList.remove('is-offline');
+    DOM.offlineBadge.innerHTML = `
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.25"/>
+        <polyline points="8 16 11 19 16 14"/>
+      </svg>
+      <span class="status-dot" aria-hidden="true"></span>
+    `;
     DOM.offlineBadge.title = '100% offline ready: All 6 audio loops are pre-cached in storage.';
+    DOM.offlineBadge.setAttribute('aria-label', '100% offline ready: All sounds cached');
   } else {
-    DOM.offlineBadge.innerHTML = '<span class="status-dot"></span><span class="status-text">Offline Ready</span>';
+    DOM.offlineBadge.classList.remove('is-offline');
+    DOM.offlineBadge.innerHTML = `
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.25"/>
+      </svg>
+      <span class="status-dot" aria-hidden="true"></span>
+    `;
     DOM.offlineBadge.title = 'Service Worker active. Sound loops cached for offline bed use.';
+    DOM.offlineBadge.setAttribute('aria-label', 'Service Worker active');
   }
 }
 

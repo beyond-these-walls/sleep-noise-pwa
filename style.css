@@ -175,17 +175,17 @@ body.bed-mode-active {
 .btn-icon {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
   background-color: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
-  padding: 8px 12px;
   border-radius: var(--radius-full);
-  font-size: 0.82rem;
-  font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
-  min-height: 40px;
+  position: relative;
+  flex-shrink: 0;
 }
 
 .btn-icon:hover, .btn-icon:focus-visible {
@@ -201,24 +201,25 @@ body.bed-mode-active {
   box-shadow: 0 0 10px var(--accent-amber-glow);
 }
 
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background-color: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  padding: 6px 10px;
-  border-radius: var(--radius-full);
-  font-size: 0.75rem;
-  color: var(--text-secondary);
+.status-badge-icon {
+  cursor: default;
 }
 
-.status-dot {
+.status-badge-icon .status-dot {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background-color: var(--accent-green);
-  box-shadow: 0 0 6px rgba(52, 211, 153, 0.6);
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.7);
+  border: 1.5px solid var(--bg-surface);
+}
+
+.status-badge-icon.is-offline .status-dot {
+  background-color: #fbbf24;
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.7);
 }
 
 /* ==========================================================================
