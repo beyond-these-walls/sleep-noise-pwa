@@ -702,20 +702,30 @@ const CURATED_PODCASTS = {
     title: 'Friday Night Comedy from BBC Radio 4',
     podcastName: 'BBC Radio 4',
     feedUrl: 'https://podcasts.files.bbci.co.uk/p02pc9pj.rss',
+    itunesId: '265307784',
     coverUrl: 'icons/icon-192.png'
   },
   'no-such-thing-as-a-fish': {
     title: 'No Such Thing As A Fish',
     podcastName: 'QI Researchers',
     feedUrl: 'https://audioboom.com/channels/2399216.rss',
-    coverUrl: 'icons/icon-192.png'
+    itunesId: '840986946',
+    coverUrl: 'https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/6f/9b/4c/6f9b4c39-3c1a-d7c7-9264-b0ed14579e08/mza_7947053701740283670.png/600x600bb.jpg'
   },
   'inside-science': {
     title: 'BBC Inside Science',
     podcastName: 'BBC Radio 4',
     feedUrl: 'https://podcasts.files.bbci.co.uk/b036f7w2.rss',
+    itunesId: '670199157',
     coverUrl: 'icons/icon-192.png'
   }
+};
+
+const KNOWN_ITUNES_IDS = {
+  'https://audioboom.com/channels/2399216.rss': '840986946',
+  'audioboom.com/channels/2399216': '840986946',
+  'https://podcasts.files.bbci.co.uk/p02pc9pj.rss': '265307784',
+  'https://podcasts.files.bbci.co.uk/b036f7w2.rss': '670199157'
 };
 
 function initPodcastModule() {
@@ -936,27 +946,109 @@ function escapeHtml(str) {
 /**
  * Fetch and parse podcast RSS XML feed with CORS proxy fallbacks
  */
-async function fetchRssFeed(feedUrl) {
+function renderEpisodeCards(episodes, podcastTitle, podcastImage) {
+  if (!episodes || episodes.length === 0) {
+    DOM.rssStatusMessage.classList.remove('loading');
+    DOM.rssStatusMessage.classList.add('error');
+    DOM.rssStatusMessage.textContent = 'No playable episodes found in this feed.';
+    return;
+  }
+
+  DOM.rssStatusMessage.classList.add('hidden');
+  DOM.rssEpisodesContainer.classList.remove('hidden');
+  DOM.rssEpisodesContainer.innerHTML = '';
+
+  episodes.forEach((ep) => {
+    if (!ep.audioUrl) return;
+
+    const epCard = document.createElement('div');
+    epCard.className = 'rss-ep-item';
+    epCard.innerHTML = `
+      <div class="rss-ep-info">
+        <div class="rss-ep-title" title="${escapeHtml(ep.title)}">${escapeHtml(ep.title)}</div>
+        <div class="rss-ep-meta">${escapeHtml(podcastTitle)}${ep.dateStr ? ' &bull; ' + escapeHtml(ep.dateStr) : ''}</div>
+      </div>
+      <button class="btn-ep-play" type="button">Queue &amp; Play</button>
+    `;
+
+    epCard.querySelector('.btn-ep-play').addEventListener('click', () => {
+      queuePodcastEpisode({
+        title: ep.title,
+        podcastName: podcastTitle,
+        coverUrl: ep.coverUrl || podcastImage || 'icons/icon-192.png',
+        audioUrl: ep.audioUrl
+      });
+      if (DOM.podcastModal) DOM.podcastModal.close();
+    });
+
+    DOM.rssEpisodesContainer.appendChild(epCard);
+  });
+}
+
+async function fetchFromItunes(itunesId) {
+  try {
+    const res = await fetch(`https://itunes.apple.com/lookup?id=${itunesId}&entity=podcastEpisode&limit=25`, {
+      signal: AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (!data.results || data.results.length < 2) return false;
+
+    const show = data.results[0];
+    const podcastTitle = show?.collectionName || 'Bedtime Podcast';
+    const podcastImage = show?.artworkUrl600 || show?.artworkUrl100 || 'icons/icon-192.png';
+
+    const episodes = data.results.slice(1).map((ep) => ({
+      title: ep.trackName || 'Untitled Episode',
+      audioUrl: ep.episodeUrl,
+      dateStr: ep.releaseDate ? new Date(ep.releaseDate).toLocaleDateString() : '',
+      coverUrl: ep.artworkUrl600 || podcastImage
+    })).filter((ep) => ep.audioUrl);
+
+    if (episodes.length > 0) {
+      renderEpisodeCards(episodes, podcastTitle, podcastImage);
+      return true;
+    }
+  } catch (e) {
+    console.warn('[RSS] Apple Podcasts directory lookup fallback warning:', e);
+  }
+  return false;
+}
+
+/**
+ * Fetch and parse podcast episodes from native RSS XML or Apple Podcasts directory API (with full browser CORS support)
+ */
+async function fetchRssFeed(feedUrl, explicitItunesId = null) {
   if (!feedUrl) return;
 
   DOM.rssStatusMessage.classList.remove('hidden', 'error');
   DOM.rssStatusMessage.classList.add('loading');
-  DOM.rssStatusMessage.textContent = 'Fetching and parsing podcast RSS feed...';
+  DOM.rssStatusMessage.textContent = 'Fetching podcast episodes...';
   DOM.rssEpisodesContainer.classList.add('hidden');
   DOM.rssEpisodesContainer.innerHTML = '';
 
-  let xmlText = null;
+  // Determine potential iTunes ID for CORS-free lookup
+  const itunesId = explicitItunesId || KNOWN_ITUNES_IDS[feedUrl] || (feedUrl.includes('2399216') ? '840986946' : null);
 
-  // Direct fetch with fallback to reliable CORS proxies for client-side RSS loading
+  // 1. If it's a known non-CORS feed like Audioboom with an iTunes ID, try iTunes lookup directly for instant load
+  if (itunesId && (feedUrl.includes('audioboom.com') || feedUrl.includes('2399216'))) {
+    const loaded = await fetchFromItunes(itunesId);
+    if (loaded) return;
+  }
+
+  // 2. Direct RSS fetch (e.g. BBC feeds support native CORS with Access-Control-Allow-Origin: *)
+  let xmlText = null;
   const fetchUrls = [
     feedUrl,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl)}`,
-    `https://corsproxy.io/?url=${encodeURIComponent(feedUrl)}`
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl)}`
   ];
 
   for (const u of fetchUrls) {
     try {
-      const res = await fetch(u, { headers: { 'Accept': 'application/rss+xml, application/xml, text/xml' } });
+      const res = await fetch(u, {
+        headers: { 'Accept': 'application/rss+xml, application/xml, text/xml' },
+        signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined
+      });
       if (res.ok) {
         const text = await res.text();
         if (text && (text.includes('<rss') || text.includes('<channel'))) {
@@ -965,81 +1057,73 @@ async function fetchRssFeed(feedUrl) {
         }
       }
     } catch (e) {
-      // Try next proxy
+      // Continue to next fallback
     }
   }
 
-  if (!xmlText) {
-    DOM.rssStatusMessage.classList.remove('loading');
-    DOM.rssStatusMessage.classList.add('error');
-    DOM.rssStatusMessage.textContent = 'Could not load RSS feed. Please check the URL or try another feed.';
-    return;
+  // 3. If XML was retrieved, parse standard RSS items
+  if (xmlText) {
+    try {
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+      
+      if (!xmlDoc.querySelector('parsererror')) {
+        const channel = xmlDoc.querySelector('channel');
+        const podcastTitle = channel?.querySelector('title')?.textContent?.trim() || 'Bedtime Podcast';
+        let podcastImage = channel?.querySelector('image > url')?.textContent?.trim() ||
+                           channel?.getElementsByTagName('itunes:image')[0]?.getAttribute('href') ||
+                           'icons/icon-192.png';
+
+        const items = Array.from(xmlDoc.querySelectorAll('item')).slice(0, 20);
+        const episodes = items.map((item) => {
+          const epTitle = item.querySelector('title')?.textContent?.trim() || 'Untitled Episode';
+          const enclosure = item.querySelector('enclosure[url]');
+          const audioUrl = enclosure ? enclosure.getAttribute('url') : null;
+          const pubDate = item.querySelector('pubDate')?.textContent?.trim() || '';
+          const dateStr = pubDate ? new Date(pubDate).toLocaleDateString() : '';
+          return { title: epTitle, audioUrl, dateStr, coverUrl: podcastImage };
+        }).filter((ep) => ep.audioUrl);
+
+        if (episodes.length > 0) {
+          renderEpisodeCards(episodes, podcastTitle, podcastImage);
+          return;
+        }
+      }
+    } catch (parseErr) {
+      console.warn('[RSS] XML parse failed, checking fallback...', parseErr);
+    }
   }
 
+  // 4. Fallback: Lookup via Apple Podcasts API (CORS enabled for all major podcasts)
+  if (itunesId) {
+    const loaded = await fetchFromItunes(itunesId);
+    if (loaded) return;
+  }
+
+  // 5. Try searching Apple Podcasts directory if query might be podcast title or feed
   try {
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
-    
-    if (xmlDoc.querySelector('parsererror')) {
-      throw new Error('XML parsing failed');
-    }
-
-    const channel = xmlDoc.querySelector('channel');
-    const podcastTitle = channel?.querySelector('title')?.textContent?.trim() || 'Bedtime Podcast';
-    let podcastImage = channel?.querySelector('image > url')?.textContent?.trim() ||
-                       channel?.getElementsByTagName('itunes:image')[0]?.getAttribute('href') ||
-                       'icons/icon-192.png';
-
-    const items = Array.from(xmlDoc.querySelectorAll('item')).slice(0, 15);
-
-    if (items.length === 0) {
-      DOM.rssStatusMessage.classList.remove('loading');
-      DOM.rssStatusMessage.classList.add('error');
-      DOM.rssStatusMessage.textContent = 'No playable episodes found in this feed.';
-      return;
-    }
-
-    DOM.rssStatusMessage.classList.add('hidden');
-    DOM.rssEpisodesContainer.classList.remove('hidden');
-
-    items.forEach((item) => {
-      const epTitle = item.querySelector('title')?.textContent?.trim() || 'Untitled Episode';
-      const enclosure = item.querySelector('enclosure[url]');
-      const audioUrl = enclosure ? enclosure.getAttribute('url') : null;
-      const pubDate = item.querySelector('pubDate')?.textContent?.trim() || '';
-      const dateStr = pubDate ? new Date(pubDate).toLocaleDateString() : '';
-
-      if (!audioUrl) return;
-
-      const epCard = document.createElement('div');
-      epCard.className = 'rss-ep-item';
-      epCard.innerHTML = `
-        <div class="rss-ep-info">
-          <div class="rss-ep-title" title="${escapeHtml(epTitle)}">${escapeHtml(epTitle)}</div>
-          <div class="rss-ep-meta">${escapeHtml(podcastTitle)} &bull; ${dateStr}</div>
-        </div>
-        <button class="btn-ep-play" type="button">Queue &amp; Play</button>
-      `;
-
-      epCard.querySelector('.btn-ep-play').addEventListener('click', () => {
-        queuePodcastEpisode({
-          title: epTitle,
-          podcastName: podcastTitle,
-          coverUrl: podcastImage,
-          audioUrl: audioUrl
-        });
-        if (DOM.podcastModal) DOM.podcastModal.close();
+    const cleanQuery = feedUrl.replace(/https?:\/\//, '').replace(/\.(rss|xml).*/, '').replace(/[^a-zA-Z0-9 ]/g, ' ').trim();
+    if (cleanQuery.length > 3) {
+      const searchRes = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(cleanQuery)}&entity=podcast&limit=1`, {
+        signal: AbortSignal.timeout ? AbortSignal.timeout(4000) : undefined
       });
-
-      DOM.rssEpisodesContainer.appendChild(epCard);
-    });
-
-  } catch (err) {
-    console.error('[RSS] Parsing error:', err);
-    DOM.rssStatusMessage.classList.remove('loading');
-    DOM.rssStatusMessage.classList.add('error');
-    DOM.rssStatusMessage.textContent = 'Failed to parse RSS XML. Try a direct audio URL instead.';
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        const foundId = searchData.results?.[0]?.collectionId;
+        if (foundId) {
+          const loaded = await fetchFromItunes(foundId);
+          if (loaded) return;
+        }
+      }
+    }
+  } catch (searchErr) {
+    console.warn('[RSS] Directory search fallback warning:', searchErr);
   }
+
+  // Final failure message
+  DOM.rssStatusMessage.classList.remove('loading');
+  DOM.rssStatusMessage.classList.add('error');
+  DOM.rssStatusMessage.textContent = 'Could not load RSS feed. Please check the URL or try a direct audio stream URL.';
 }
 
 /**
@@ -1312,10 +1396,10 @@ function bindEvents() {
       const p = CURATED_PODCASTS[pid];
       if (p) {
         if (p.feedUrl) {
-          // Switch to RSS tab and auto fetch
+          // Switch to RSS tab and auto fetch with CORS-friendly iTunes ID fallback
           DOM.tabRssBtn.click();
           DOM.rssFeedInput.value = p.feedUrl;
-          fetchRssFeed(p.feedUrl);
+          fetchRssFeed(p.feedUrl, p.itunesId);
         } else {
           // Direct audio
           queuePodcastEpisode(p);
