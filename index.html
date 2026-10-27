@@ -1,26 +1,30 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
   <title>Sleep Noise - Bedtime White Noise, Brown Noise &amp; Rain</title>
-  
-  <meta name="description" content="Lightweight bedtime sleep sound generator and ambient mixer. Seamless brown noise, white noise, and rain loops with sleep timer and media session controls.">
+
+  <meta name="description"
+    content="Lightweight bedtime sleep sound generator and ambient mixer. Seamless brown noise, white noise, and rain loops with sleep timer and media session controls.">
   <meta name="theme-color" content="#06080d">
   <meta name="color-scheme" content="dark">
-  
+
   <!-- Mobile & PWA meta -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="SleepNoise">
   <meta name="mobile-web-app-capable" content="yes">
-  
+
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" sizes="64x64" href="icons/favicon.png">
   <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-  
+
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body class="dark-theme">
   <!-- Screen Dimmer Overlay for Bed Mode -->
   <div id="bedModeOverlay" class="bed-mode-overlay" aria-hidden="true"></div>
@@ -43,7 +47,7 @@
       <div class="brand">
         <div class="brand-icon" aria-hidden="true">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
           </svg>
         </div>
         <div>
@@ -54,17 +58,21 @@
 
       <div class="header-actions">
         <!-- Bed Mode Dimmer Toggle (Icon Only) -->
-        <button id="bedModeBtn" class="btn-icon" type="button" aria-pressed="false" aria-label="Toggle Bed Mode (Ultra-Dim Amber Filter)" title="Toggle Bed Mode (Ultra-Dim Amber Filter)">
-          <svg class="icon-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        <button id="bedModeBtn" class="btn-icon" type="button" aria-pressed="false"
+          aria-label="Toggle Bed Mode (Ultra-Dim Amber Filter)" title="Toggle Bed Mode (Ultra-Dim Amber Filter)">
+          <svg class="icon-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
           </svg>
         </button>
 
         <!-- Offline Status Badge (Icon Only) -->
-        <div id="offlineBadge" class="btn-icon status-badge-icon" role="status" aria-label="Offline Ready: All sound loops cached" title="100% offline ready: All sound loops cached">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.25"/>
-            <polyline points="8 16 11 19 16 14"/>
+        <div id="offlineBadge" class="btn-icon status-badge-icon" role="status"
+          aria-label="Offline Ready: All sound loops cached" title="100% offline ready: All sound loops cached">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            aria-hidden="true">
+            <path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.25" />
+            <polyline points="8 16 11 19 16 14" />
           </svg>
           <span class="status-dot" aria-hidden="true"></span>
         </div>
@@ -74,15 +82,17 @@
     <!-- Master Control Bar -->
     <section class="master-panel" aria-labelledby="masterControlsHeading">
       <h2 id="masterControlsHeading" class="visually-hidden">Master Sound Controls</h2>
-      
+
       <div class="master-top">
         <button id="masterPlayBtn" class="btn-master-play" type="button" aria-label="Start all active sleep sounds">
-          <svg id="masterPlayIcon" class="icon-play" width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <polygon points="5 3 19 12 5 21 5 3"/>
+          <svg id="masterPlayIcon" class="icon-play" width="28" height="28" viewBox="0 0 24 24" fill="currentColor"
+            aria-hidden="true">
+            <polygon points="5 3 19 12 5 21 5 3" />
           </svg>
-          <svg id="masterPauseIcon" class="icon-pause hidden" width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <rect x="6" y="4" width="4" height="16"/>
-            <rect x="14" y="4" width="4" height="16"/>
+          <svg id="masterPauseIcon" class="icon-pause hidden" width="28" height="28" viewBox="0 0 24 24"
+            fill="currentColor" aria-hidden="true">
+            <rect x="6" y="4" width="4" height="16" />
+            <rect x="14" y="4" width="4" height="16" />
           </svg>
           <span id="masterPlayText" class="master-btn-text">Start Sleep Sounds</span>
         </button>
@@ -99,21 +109,24 @@
       <div class="master-volume-box">
         <div class="volume-header">
           <label for="masterVolumeRange" class="volume-label">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              aria-hidden="true">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
             </svg>
             <span>Master Volume</span>
           </label>
           <div class="volume-actions">
             <span id="masterVolumeValue" class="volume-val">80%</span>
-            <button id="masterMuteBtn" class="btn-mini-mute" type="button" aria-pressed="false" title="Mute master volume">
+            <button id="masterMuteBtn" class="btn-mini-mute" type="button" aria-pressed="false"
+              title="Mute master volume">
               <span class="mute-text">Mute</span>
             </button>
           </div>
         </div>
         <div class="slider-wrapper">
-          <input type="range" id="masterVolumeRange" min="0" max="100" value="80" step="1" aria-label="Master volume slider">
+          <input type="range" id="masterVolumeRange" min="0" max="100" value="80" step="1"
+            aria-label="Master volume slider">
         </div>
       </div>
 
@@ -144,13 +157,14 @@
     <section class="podcast-panel" aria-labelledby="podcastHeading">
       <div class="podcast-panel-header">
         <div class="panel-header-title">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-            <line x1="12" y1="19" x2="12" y2="23"/>
-            <line x1="8" y1="23" x2="16" y2="23"/>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            aria-hidden="true">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+            <line x1="12" y1="19" x2="12" y2="23" />
+            <line x1="8" y1="23" x2="16" y2="23" />
           </svg>
-          <h2 id="podcastHeading">Podcast Lead</h2>
+          <h2 id="podcastHeading">Podcast</h2>
         </div>
       </div>
 
@@ -165,7 +179,8 @@
         <div class="empty-icon" aria-hidden="true">🎙️</div>
         <div class="empty-content">
           <p class="empty-title">Queue a podcast before sleep</p>
-          <p class="empty-desc">When the episode finishes, your selected sleep sound automatically loops and fades in over 4s without dropping audio session.</p>
+          <p class="empty-desc">When the episode finishes, your selected sleep sound automatically loops and fades in
+            over 4s without dropping audio session.</p>
         </div>
         <button id="emptyQueueBtn" class="btn-sample-play" type="button">
           <span>Choose a Podcast to Queue</span>
@@ -175,19 +190,22 @@
       <!-- Active Episode Card (Hidden when no episode is loaded) -->
       <div id="podcastActiveCard" class="podcast-card hidden">
         <div class="podcast-meta-row">
-          <img id="podcastCoverImg" class="podcast-cover" src="icons/icon-192.png" alt="Podcast cover art" width="52" height="52">
+          <img id="podcastCoverImg" class="podcast-cover" src="icons/icon-192.png" alt="Podcast cover art" width="52"
+            height="52">
           <div class="podcast-text-group">
             <h3 id="podcastEpisodeTitle" class="podcast-ep-title">No episode loaded</h3>
             <p id="podcastShowName" class="podcast-show-name">Bedtime Queue</p>
           </div>
-          <button id="podcastRemoveBtn" class="btn-icon-subtle" type="button" title="Remove episode from queue" aria-label="Remove episode">
+          <button id="podcastRemoveBtn" class="btn-icon-subtle" type="button" title="Remove episode from queue"
+            aria-label="Remove episode">
             ✕
           </button>
         </div>
 
         <!-- Scrubber Progress Bar -->
         <div class="podcast-scrubber-box">
-          <input type="range" id="podcastSeeker" min="0" max="100" value="0" step="0.2" aria-label="Podcast scrub slider">
+          <input type="range" id="podcastSeeker" min="0" max="100" value="0" step="0.2"
+            aria-label="Podcast scrub slider">
           <div class="scrubber-times">
             <span id="podcastCurTime">0:00</span>
             <span id="podcastDuration">0:00</span>
@@ -196,31 +214,39 @@
 
         <!-- Controls Row -->
         <div class="podcast-controls-row">
-          <button id="podcastRwBtn" class="btn-podcast-ctrl" type="button" title="Rewind 15 seconds" aria-label="Rewind 15 seconds">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <path d="M1 4v6h6M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
-              <text x="12" y="15" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-weight="bold">15</text>
+          <button id="podcastRwBtn" class="btn-podcast-ctrl" type="button" title="Rewind 15 seconds"
+            aria-label="Rewind 15 seconds">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              aria-hidden="true">
+              <path d="M1 4v6h6M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+              <text x="12" y="15" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none"
+                font-weight="bold">15</text>
             </svg>
           </button>
 
           <button id="podcastPlayBtn" class="btn-podcast-play" type="button" aria-label="Play or pause podcast">
             <svg id="podcastPlayIcon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <polygon points="5 3 19 12 5 21 5 3"/>
+              <polygon points="5 3 19 12 5 21 5 3" />
             </svg>
-            <svg id="podcastPauseIcon" class="hidden" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <rect x="6" y="4" width="4" height="16"/>
-              <rect x="14" y="4" width="4" height="16"/>
-            </svg>
-          </button>
-
-          <button id="podcastFfBtn" class="btn-podcast-ctrl" type="button" title="Fast-forward 30 seconds" aria-label="Fast forward 30 seconds">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <path d="M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-              <text x="12" y="15" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-weight="bold">30</text>
+            <svg id="podcastPauseIcon" class="hidden" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"
+              aria-hidden="true">
+              <rect x="6" y="4" width="4" height="16" />
+              <rect x="14" y="4" width="4" height="16" />
             </svg>
           </button>
 
-          <button id="podcastEndNowBtn" class="btn-skip-ambient" type="button" title="Test the end-of-episode 4s ambient fade-in transition">
+          <button id="podcastFfBtn" class="btn-podcast-ctrl" type="button" title="Fast-forward 30 seconds"
+            aria-label="Fast forward 30 seconds">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              aria-hidden="true">
+              <path d="M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+              <text x="12" y="15" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none"
+                font-weight="bold">30</text>
+            </svg>
+          </button>
+
+          <button id="podcastEndNowBtn" class="btn-skip-ambient" type="button"
+            title="Test the end-of-episode 4s ambient fade-in transition">
             <span>Skip to Sleep Sound (Test 4s Fade) &rarr;</span>
           </button>
         </div>
@@ -246,9 +272,10 @@
     <section class="timer-panel" aria-labelledby="timerHeading">
       <div class="panel-header">
         <div class="panel-header-title">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <circle cx="12" cy="12" r="10"/>
-            <polyline points="12 6 12 12 16 14"/>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            aria-hidden="true">
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" />
           </svg>
           <h2 id="timerHeading">Sleep Timer</h2>
         </div>
@@ -260,7 +287,8 @@
       <p class="timer-hint">Gradually fades out sound volume in the final 60 seconds.</p>
 
       <div class="timer-chips" role="radiogroup" aria-label="Sleep timer duration">
-        <button class="timer-btn active" type="button" role="radio" aria-checked="true" data-minutes="0">Continuous</button>
+        <button class="timer-btn active" type="button" role="radio" aria-checked="true"
+          data-minutes="0">Continuous</button>
         <button class="timer-btn" type="button" role="radio" aria-checked="false" data-minutes="15">15 min</button>
         <button class="timer-btn" type="button" role="radio" aria-checked="false" data-minutes="30">30 min</button>
         <button class="timer-btn" type="button" role="radio" aria-checked="false" data-minutes="45">45 min</button>
@@ -305,10 +333,11 @@
     <!-- Bedtime Tips / Lockscreen Info -->
     <footer class="app-footer">
       <div class="lockscreen-info">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <rect x="5" y="11" width="14" height="10" rx="2"/>
-          <circle cx="12" cy="16" r="1"/>
-          <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          aria-hidden="true">
+          <rect x="5" y="11" width="14" height="10" rx="2" />
+          <circle cx="12" cy="16" r="1" />
+          <path d="M8 11V7a4 4 0 0 1 8 0v4" />
         </svg>
         <span>Lock Screen Controls Supported &bull; Audio plays with screen off</span>
       </div>
@@ -330,13 +359,16 @@
 
     <!-- Tab Switcher -->
     <div class="modal-tabs" role="tablist" aria-label="Podcast input methods">
-      <button id="tabPresetsBtn" class="modal-tab-btn active" type="button" role="tab" aria-selected="true" aria-controls="tabPresets">
+      <button id="tabPresetsBtn" class="modal-tab-btn active" type="button" role="tab" aria-selected="true"
+        aria-controls="tabPresets">
         Popular Podcasts
       </button>
-      <button id="tabRssBtn" class="modal-tab-btn" type="button" role="tab" aria-selected="false" aria-controls="tabRss">
+      <button id="tabRssBtn" class="modal-tab-btn" type="button" role="tab" aria-selected="false"
+        aria-controls="tabRss">
         Custom RSS Feed
       </button>
-      <button id="tabCustomBtn" class="modal-tab-btn" type="button" role="tab" aria-selected="false" aria-controls="tabCustom">
+      <button id="tabCustomBtn" class="modal-tab-btn" type="button" role="tab" aria-selected="false"
+        aria-controls="tabCustom">
         Custom Audio URL
       </button>
     </div>
@@ -348,7 +380,8 @@
         <div class="podcast-preset-card">
           <div class="preset-badge highlight">BBC Radio 4</div>
           <h4>Friday Night Comedy from BBC Radio 4</h4>
-          <p>Topical comedy, satirical stand-up, and sketches from BBC Radio 4 including The News Quiz and The Now Show.</p>
+          <p>Topical comedy, satirical stand-up, and sketches from BBC Radio 4 including The News Quiz and The Now Show.
+          </p>
           <button class="btn-load-preset" type="button" data-preset-id="friday-night-comedy">
             Browse Episodes
           </button>
@@ -357,7 +390,8 @@
         <div class="podcast-preset-card">
           <div class="preset-badge highlight">QI Researchers</div>
           <h4>No Such Thing As A Fish</h4>
-          <p>Award-winning podcast where the researchers behind QI share the most bizarre, astonishing facts they found this week.</p>
+          <p>Award-winning podcast where the researchers behind QI share the most bizarre, astonishing facts they found
+            this week.</p>
           <button class="btn-load-preset" type="button" data-preset-id="no-such-thing-as-a-fish">
             Browse Episodes
           </button>
@@ -366,7 +400,8 @@
         <div class="podcast-preset-card">
           <div class="preset-badge highlight">BBC Radio 4</div>
           <h4>BBC Inside Science</h4>
-          <p>Illuminating explorations and lively discussions of the latest science stories, discoveries, and controversies.</p>
+          <p>Illuminating explorations and lively discussions of the latest science stories, discoveries, and
+            controversies.</p>
           <button class="btn-load-preset" type="button" data-preset-id="inside-science">
             Browse Episodes
           </button>
@@ -378,7 +413,8 @@
     <div id="tabRss" class="modal-tab-panel hidden" role="tabpanel" aria-labelledby="tabRssBtn">
       <p class="tab-help">Paste any podcast RSS feed URL to browse and queue episodes:</p>
       <div class="input-row">
-        <input type="url" id="rssFeedInput" class="text-input" placeholder="https://example.com/podcast/feed.xml" aria-label="Podcast RSS Feed URL">
+        <input type="url" id="rssFeedInput" class="text-input" placeholder="https://example.com/podcast/feed.xml"
+          aria-label="Podcast RSS Feed URL">
         <button id="fetchRssBtn" class="btn-submit-action" type="button">
           <span>Fetch Episodes</span>
         </button>
@@ -397,7 +433,8 @@
       <p class="tab-help">Stream any direct episodic audio file (.mp3, .m4a, .aac) before your sleep sounds:</p>
       <div class="form-group">
         <label for="customAudioUrl">Audio Stream URL:</label>
-        <input type="url" id="customAudioUrl" class="text-input" placeholder="https://example.com/audio/episode.mp3" required>
+        <input type="url" id="customAudioUrl" class="text-input" placeholder="https://example.com/audio/episode.mp3"
+          required>
       </div>
       <div class="form-group">
         <label for="customAudioTitle">Episode Title (Optional):</label>
@@ -415,4 +452,5 @@
 
   <script src="app.js"></script>
 </body>
+
 </html>
