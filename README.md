@@ -13,10 +13,16 @@ A lightweight, mobile-first Progressive Web App (PWA) designed for deep, uninter
   - Independent volume sliders (0–100%) and mute/unmute toggles for each sound.
   - Master volume slider with proportional scaling.
   - Quick mix presets: *Deep Rest*, *Rainy Night*, *Cozy Thunder*, and *White Noise*.
-- **Podcast Lead with 4-Second Crossfade**:
+- **Timed Sleep Transition & Long MP3 Mode**:
+  - Load long audio MP3 files, audiobooks, lectures, or ambient tracks via local device file picker (`<input type="file" accept="audio/*">`) or direct URL.
+  - Duration selector with presets (`15 min`, `30 min`, `45 min`, `Play to End`, or `Custom` minutes).
+  - Background-accurate playback progress tracking via HTML5 `<audio>` `timeupdate` events, ensuring the timer never freezes or throttles when the phone screen is locked.
+  - Smooth **5-second equal-power acoustic crossfade** (`Math.cos` / `Math.sin`) from primary audio into continuous ambient sleep sounds upon reaching the target time.
+  - Automatic `localStorage` position saving so you can resume listening right where you left off next time.
+  - Seamless lock-screen `navigator.mediaSession` metadata update transitioning from the MP3 track to the ambient soundscape without interrupting playback.
+- **Podcast Lead & RSS Feeds**:
   - Stream episodic podcasts via curated popular feeds (*Friday Night Comedy*, *No Such Thing As A Fish*, *BBC Inside Science*), custom RSS feed URLs, or direct audio streams (.mp3, .m4a).
-  - When the podcast episode reaches its `ended` event, the player automatically begins looping your selected ambient sleep soundscape, fading volume in smoothly over 4 seconds.
-  - Synchronous `navigator.mediaSession` updates transition the lock-screen metadata from podcast to ambient sounds without dropping background playback on mobile devices.
+  - When the podcast episode reaches its `ended` event, the player automatically begins looping your selected ambient sleep soundscape.
 - **Sleep Timer with Smooth Fadeout**:
   - Presets: 15m, 30m, 45m, 1h, 2h, or Continuous.
   - In the final 60 seconds, volume smoothly fades to zero before stopping.

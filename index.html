@@ -178,17 +178,39 @@
       <div id="podcastEmptyState" class="podcast-empty-state">
         <div class="empty-icon" aria-hidden="true">🎙️</div>
         <div class="empty-content">
-          <p class="empty-title">Queue a podcast before sleep</p>
-          <p class="empty-desc">When the episode finishes, your selected sleep sound automatically loops and fades in
-            over 4s without dropping audio session.</p>
+          <p class="empty-title">Queue a Podcast or Long MP3</p>
+          <p class="empty-desc">Listen to an episode, audiobook, or talk before sleep. Set a transition timer (15m, 30m, 45m, or Custom) to smoothly crossfade over 5 seconds into your ambient sleep sounds, with auto-saved playback positions.</p>
         </div>
-        <button id="emptyQueueBtn" class="btn-sample-play" type="button">
-          <span>Choose a Podcast to Queue</span>
-        </button>
+        <div class="empty-actions-row">
+          <button id="emptyQueueBtn" class="btn-sample-play" type="button">
+            <span>Choose Podcast / Long MP3</span>
+          </button>
+          <label for="quickLocalMp3Input" class="btn-sample-play btn-file-picker" role="button" tabindex="0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <span>📁 Select Local MP3</span>
+          </label>
+          <input type="file" id="quickLocalMp3Input" accept="audio/*" class="visually-hidden">
+        </div>
       </div>
 
       <!-- Active Episode Card (Hidden when no episode is loaded) -->
       <div id="podcastActiveCard" class="podcast-card hidden">
+        <!-- Resume Saved Position Banner -->
+        <div id="mp3ResumeNotice" class="mp3-resume-banner hidden">
+          <div class="resume-info">
+            <span class="resume-icon" aria-hidden="true">📍</span>
+            <span>Resume saved position from <strong id="mp3ResumeTime">0:00</strong>?</span>
+          </div>
+          <div class="resume-actions">
+            <button id="btnResumeMp3" class="btn-resume-cta" type="button">Resume</button>
+            <button id="btnRestartMp3" class="btn-resume-subtle" type="button">Start Over</button>
+          </div>
+        </div>
+
         <div class="podcast-meta-row">
           <img id="podcastCoverImg" class="podcast-cover" src="icons/icon-192.png" alt="Podcast cover art" width="52"
             height="52">
@@ -246,9 +268,43 @@
           </button>
 
           <button id="podcastEndNowBtn" class="btn-skip-ambient" type="button"
-            title="Test the end-of-episode 4s ambient fade-in transition">
-            <span>Skip to Sleep Sound (Test 4s Fade) &rarr;</span>
+            title="Test the 5-second crossfade into ambient sleep sounds">
+            <span>Test 5s Ambient Crossfade &rarr;</span>
           </button>
+        </div>
+
+        <!-- Timed Sleep Transition Duration Panel -->
+        <div class="timed-transition-panel">
+          <div class="timed-transition-header">
+            <div class="timed-header-left">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+              </svg>
+              <span class="timed-header-title">Timed Sleep Transition</span>
+            </div>
+            <div id="timedCountdownBadge" class="timed-countdown-badge">
+              ⏱️ <span id="timedCountdownText">30:00 remaining</span>
+            </div>
+          </div>
+
+          <p class="timed-panel-desc">
+            Tracks playback progress via <code>timeupdate</code> while screen is locked. When target time is reached, crossfades over 5 seconds into continuous ambient sleep sounds and saves your position.
+          </p>
+
+          <div class="timed-duration-chips" role="radiogroup" aria-label="Timed transition duration">
+            <button class="timed-chip" type="button" role="radio" aria-checked="false" data-minutes="15">15 min</button>
+            <button class="timed-chip active" type="button" role="radio" aria-checked="true" data-minutes="30">30 min</button>
+            <button class="timed-chip" type="button" role="radio" aria-checked="false" data-minutes="45">45 min</button>
+            <button class="timed-chip" type="button" role="radio" aria-checked="false" data-minutes="custom">Custom</button>
+            <button class="timed-chip" type="button" role="radio" aria-checked="false" data-minutes="0">Play to End</button>
+          </div>
+
+          <div id="timedCustomRow" class="timed-custom-row hidden">
+            <label for="timedCustomInput">Duration (minutes):</label>
+            <input type="number" id="timedCustomInput" min="1" max="360" value="20" class="timed-custom-number">
+            <button id="btnApplyTimedCustom" type="button" class="btn-apply-custom">Set</button>
+          </div>
         </div>
 
         <!-- Target Ambient Sound Selector -->
@@ -358,8 +414,12 @@
     </div>
 
     <!-- Tab Switcher -->
-    <div class="modal-tabs" role="tablist" aria-label="Podcast input methods">
-      <button id="tabPresetsBtn" class="modal-tab-btn active" type="button" role="tab" aria-selected="true"
+    <div class="modal-tabs" role="tablist" aria-label="Podcast and audio input methods">
+      <button id="tabLongMp3Btn" class="modal-tab-btn active" type="button" role="tab" aria-selected="true"
+        aria-controls="tabLongMp3">
+        Long MP3 / Audiobook
+      </button>
+      <button id="tabPresetsBtn" class="modal-tab-btn" type="button" role="tab" aria-selected="false"
         aria-controls="tabPresets">
         Popular Podcasts
       </button>
@@ -371,6 +431,34 @@
         aria-controls="tabCustom">
         Custom Audio URL
       </button>
+    </div>
+
+    <!-- Tab 0: Long MP3 / Timed Sleep Transition -->
+    <div id="tabLongMp3" class="modal-tab-panel" role="tabpanel" aria-labelledby="tabLongMp3Btn">
+      <div class="long-mp3-upload-zone">
+        <h4>📁 Select Long MP3 from Your Device</h4>
+        <p>Choose an audiobook, long talk, lecture, or sleep track. Stored on your device with auto-saved resume positions.</p>
+        <label for="modalFileInput" class="btn-submit-action file-btn-label">Browse Audio Files</label>
+        <input type="file" id="modalFileInput" accept="audio/*" class="visually-hidden">
+      </div>
+
+      <div class="modal-section-divider">
+        <span>OR STREAM FROM URL</span>
+      </div>
+
+      <div class="form-group">
+        <label for="longMp3Url">Long Audio Stream URL (.mp3, .m4a):</label>
+        <div class="input-row">
+          <input type="url" id="longMp3Url" class="text-input" placeholder="https://example.com/audiobook.mp3">
+          <button id="loadLongMp3UrlBtn" class="btn-submit-action" type="button">Load &amp; Play</button>
+        </div>
+      </div>
+
+      <!-- Resumable Saved MP3s list -->
+      <div id="savedMp3sContainer" class="saved-mp3s-container hidden">
+        <label class="form-label">Recent Saved Positions:</label>
+        <div id="savedMp3sList" class="recent-mp3-list"></div>
+      </div>
     </div>
 
     <!-- Tab 1: Popular Podcasts Presets -->

@@ -79,6 +79,17 @@ const state = {
     audioUrl: '',
     targetMix: 'deep-rest',
     isFadingToSleep: false
+  },
+  timedTransition: {
+    enabled: true,
+    durationMinutes: 30,
+    targetDurationSec: 1800,
+    listenedSec: 0,
+    lastCurrentTime: null,
+    isCrossfading: false,
+    crossfadeDurationMs: 5000,
+    fileKey: '',
+    savedPosition: 0
   }
 };
 
@@ -96,6 +107,8 @@ document.addEventListener('DOMContentLoaded', () => {
   bindEvents();
   registerServiceWorker();
   updateMasterUI();
+  setTimedDuration(30);
+  renderRecentSavedMp3s();
 });
 
 function cacheDOM() {
@@ -144,6 +157,26 @@ function cacheDOM() {
     podcastFfBtn: document.getElementById('podcastFfBtn'),
     podcastEndNowBtn: document.getElementById('podcastEndNowBtn'),
     podcastTransitionTarget: document.getElementById('podcastTransitionTarget'),
+
+    // Timed Sleep Transition & Long MP3 Elements
+    quickLocalMp3Input: document.getElementById('quickLocalMp3Input'),
+    modalFileInput: document.getElementById('modalFileInput'),
+    tabLongMp3Btn: document.getElementById('tabLongMp3Btn'),
+    tabLongMp3: document.getElementById('tabLongMp3'),
+    longMp3Url: document.getElementById('longMp3Url'),
+    loadLongMp3UrlBtn: document.getElementById('loadLongMp3UrlBtn'),
+    savedMp3sContainer: document.getElementById('savedMp3sContainer'),
+    savedMp3sList: document.getElementById('savedMp3sList'),
+    mp3ResumeNotice: document.getElementById('mp3ResumeNotice'),
+    mp3ResumeTime: document.getElementById('mp3ResumeTime'),
+    btnResumeMp3: document.getElementById('btnResumeMp3'),
+    btnRestartMp3: document.getElementById('btnRestartMp3'),
+    timedCountdownBadge: document.getElementById('timedCountdownBadge'),
+    timedCountdownText: document.getElementById('timedCountdownText'),
+    timedDurationChips: document.querySelectorAll('.timed-chip'),
+    timedCustomRow: document.getElementById('timedCustomRow'),
+    timedCustomInput: document.getElementById('timedCustomInput'),
+    btnApplyTimedCustom: document.getElementById('btnApplyTimedCustom'),
 
     // Modal Tabs & Inputs
     tabPresetsBtn: document.getElementById('tabPresetsBtn'),
@@ -728,17 +761,172 @@ const KNOWN_ITUNES_IDS = {
   'https://podcasts.files.bbci.co.uk/b036f7w2.rss': '670199157'
 };
 
+/**
+ * ==========================================================================
+ * LocalStorage Playback Position Persistence & Timed Transition Engine
+ * ==========================================================================
+ */
+const STORAGE_KEY_POSITIONS = 'sleep_timed_mp3_positions';
+
+function getSavedPositions() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY_POSITIONS) || '{}');
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveMp3Position(fileKey, currentTime, title) {
+  if (!fileKey || currentTime === undefined || currentTime === null || isNaN(currentTime)) return;
+  const positions = getSavedPositions();
+  positions[fileKey] = {
+    position: Math.floor(currentTime),
+    title: title || state.podcast.episodeTitle || 'Audio Track',
+    updatedAt: Date.now()
+  };
+  try {
+    localStorage.setItem(STORAGE_KEY_POSITIONS, JSON.stringify(positions));
+  } catch (e) {
+    console.warn('[LocalStorage] Position save error:', e);
+  }
+}
+
+function getSavedPosition(fileKey) {
+  if (!fileKey) return 0;
+  const positions = getSavedPositions();
+  return positions[fileKey]?.position || 0;
+}
+
+function checkAndShowResumeNotice(fileKey) {
+  if (!fileKey || !DOM.mp3ResumeNotice) return;
+  const savedPos = getSavedPosition(fileKey);
+  // Show prompt if saved position is at least 5 seconds in
+  if (savedPos && savedPos > 5) {
+    state.timedTransition.savedPosition = savedPos;
+    if (DOM.mp3ResumeTime) {
+      DOM.mp3ResumeTime.textContent = formatDuration(savedPos);
+    }
+    DOM.mp3ResumeNotice.classList.remove('hidden');
+  } else {
+    state.timedTransition.savedPosition = 0;
+    DOM.mp3ResumeNotice.classList.add('hidden');
+  }
+}
+
+function renderRecentSavedMp3s() {
+  if (!DOM.savedMp3sContainer || !DOM.savedMp3sList) return;
+  const positions = getSavedPositions();
+  const entries = Object.entries(positions)
+    .sort((a, b) => (b[1].updatedAt || 0) - (a[1].updatedAt || 0))
+    .slice(0, 5);
+
+  if (entries.length === 0) {
+    DOM.savedMp3sContainer.classList.add('hidden');
+    DOM.savedMp3sList.innerHTML = '';
+    return;
+  }
+
+  DOM.savedMp3sContainer.classList.remove('hidden');
+  DOM.savedMp3sList.innerHTML = '';
+
+  entries.forEach(([key, item]) => {
+    if (!item.position || item.position <= 5) return;
+    const card = document.createElement('div');
+    card.className = 'recent-mp3-item';
+    card.innerHTML = `
+      <div class="recent-mp3-info">
+        <div class="recent-mp3-title">${escapeHtml(item.title || key)}</div>
+        <div class="recent-mp3-meta">Saved position: ${formatDuration(item.position)}</div>
+      </div>
+      <button class="btn-ep-play" type="button">Resume</button>
+    `;
+
+    card.querySelector('.btn-ep-play').addEventListener('click', () => {
+      if (key.startsWith('url_')) {
+        const url = key.replace(/^url_/, '');
+        queuePodcastEpisode({
+          title: item.title || 'Audio Stream',
+          podcastName: 'Resumed Stream',
+          audioUrl: url,
+          fileKey: key,
+          coverUrl: 'icons/icon-192.png'
+        });
+        DOM.audioPodcast.currentTime = item.position;
+      } else if (state.timedTransition.fileKey === key) {
+        DOM.audioPodcast.currentTime = item.position;
+        DOM.audioPodcast.play();
+      } else {
+        alert(`To resume "${item.title}", please select the audio file from your device.`);
+      }
+      if (DOM.podcastModal) DOM.podcastModal.close();
+    });
+
+    DOM.savedMp3sList.appendChild(card);
+  });
+}
+
+function updateTimedCountdownUI(remainingSec) {
+  if (!DOM.timedCountdownText) return;
+  if (!state.timedTransition.enabled || state.timedTransition.targetDurationSec <= 0) {
+    DOM.timedCountdownText.textContent = 'Until track ends';
+    return;
+  }
+  const m = Math.floor(remainingSec / 60);
+  const s = Math.floor(remainingSec % 60);
+  const timeStr = `${m}:${s < 10 ? '0' : ''}${s}`;
+  DOM.timedCountdownText.textContent = `${timeStr} remaining`;
+}
+
+function setTimedDuration(minutes) {
+  state.timedTransition.durationMinutes = minutes;
+  if (minutes > 0) {
+    state.timedTransition.enabled = true;
+    state.timedTransition.targetDurationSec = minutes * 60;
+    state.timedTransition.listenedSec = 0;
+    state.timedTransition.lastCurrentTime = DOM.audioPodcast ? DOM.audioPodcast.currentTime : 0;
+    updateTimedCountdownUI(state.timedTransition.targetDurationSec);
+  } else {
+    state.timedTransition.enabled = false;
+    state.timedTransition.targetDurationSec = 0;
+    if (DOM.timedCountdownText) {
+      DOM.timedCountdownText.textContent = 'Until track ends';
+    }
+  }
+
+  if (DOM.timedDurationChips) {
+    DOM.timedDurationChips.forEach((btn) => {
+      const btnMin = btn.getAttribute('data-minutes');
+      if (btnMin === 'custom') {
+        const isCustom = (minutes !== 15 && minutes !== 30 && minutes !== 45 && minutes !== 0);
+        btn.classList.toggle('active', isCustom);
+        btn.setAttribute('aria-checked', isCustom ? 'true' : 'false');
+      } else {
+        const isMatch = (parseInt(btnMin, 10) === minutes);
+        btn.classList.toggle('active', isMatch);
+        btn.setAttribute('aria-checked', isMatch ? 'true' : 'false');
+      }
+    });
+  }
+
+  if (DOM.timedCustomRow) {
+    const isCustom = (minutes !== 15 && minutes !== 30 && minutes !== 45 && minutes !== 0);
+    DOM.timedCustomRow.classList.toggle('hidden', !isCustom);
+  }
+}
+
 function initPodcastModule() {
   if (!DOM.audioPodcast) return;
 
   state.podcast.audioEl = DOM.audioPodcast;
+  let lastThrottleSaveTime = 0;
 
   // Track playback state changes
   DOM.audioPodcast.addEventListener('play', () => {
     state.podcast.isPlaying = true;
+    state.timedTransition.lastCurrentTime = DOM.audioPodcast.currentTime;
     updatePodcastUI();
 
-    // Pause any ambient sounds so podcast plays cleanly alone
+    // Pause any ambient sounds so primary audio plays cleanly alone
     pauseAllSounds();
     state.isPlaying = false;
     updateMasterUI();
@@ -747,19 +935,54 @@ function initPodcastModule() {
 
   DOM.audioPodcast.addEventListener('pause', () => {
     state.podcast.isPlaying = false;
+    // Save position immediately on pause
+    if (state.timedTransition.fileKey && DOM.audioPodcast.currentTime > 0) {
+      saveMp3Position(state.timedTransition.fileKey, DOM.audioPodcast.currentTime, state.podcast.episodeTitle);
+    }
     updatePodcastUI();
     updateMediaSession();
   });
 
+  // Track playback progress via timeupdate event so it remains accurate when phone screen is locked
   DOM.audioPodcast.addEventListener('timeupdate', () => {
     if (!DOM.audioPodcast.duration) return;
     const cur = DOM.audioPodcast.currentTime;
     const dur = DOM.audioPodcast.duration;
+
     if (DOM.podcastSeeker) {
       DOM.podcastSeeker.value = (cur / dur) * 100;
     }
     if (DOM.podcastCurTime) {
       DOM.podcastCurTime.textContent = formatDuration(cur);
+    }
+
+    // Auto-save position to localStorage every 2 seconds
+    const nowSec = performance.now() / 1000;
+    if (state.timedTransition.fileKey && (nowSec - lastThrottleSaveTime >= 2.0)) {
+      lastThrottleSaveTime = nowSec;
+      saveMp3Position(state.timedTransition.fileKey, cur, state.podcast.episodeTitle);
+    }
+
+    // ACCURATE LOCK-SCREEN TRACKING: accumulate real playback seconds via timeupdate
+    if (state.timedTransition.enabled && state.timedTransition.targetDurationSec > 0 && !DOM.audioPodcast.paused) {
+      if (state.timedTransition.lastCurrentTime !== null) {
+        const delta = cur - state.timedTransition.lastCurrentTime;
+        // Step within normal playback rate
+        if (delta > 0 && delta < 2.5) {
+          state.timedTransition.listenedSec += delta;
+        }
+      }
+      state.timedTransition.lastCurrentTime = cur;
+
+      const remainingSec = Math.max(0, state.timedTransition.targetDurationSec - state.timedTransition.listenedSec);
+      updateTimedCountdownUI(remainingSec);
+
+      // When the target time is reached, smoothly crossfade over 5 seconds into ambient sound!
+      if (remainingSec <= 0 && !state.timedTransition.isCrossfading) {
+        trigger5sCrossfade('Timed sleep duration reached');
+      }
+    } else {
+      state.timedTransition.lastCurrentTime = cur;
     }
   });
 
@@ -772,65 +995,111 @@ function initPodcastModule() {
     }
   });
 
-  // CRITICAL REQUIREMENT: Listen for ended event on the podcast audio element
+  // Listen for ended event on the audio element (when file completes before timer)
   DOM.audioPodcast.addEventListener('ended', () => {
-    console.log('[Podcast] audio ended event fired! Seamlessly fading in ambient sleep sounds over 4s...');
-    transitionPodcastToAmbient();
+    console.log('[Podcast] audio ended event fired! Seamlessly crossfading into ambient sleep sounds over 5s...');
+    trigger5sCrossfade('Track finished');
   });
 }
 
 /**
- * Automatically begin looping selected ambient sleep sound,
- * fading volume in smoothly over 4 seconds, and updating mediaSession seamlessly.
+ * Smoothly crossfade over 5 seconds from primary audio into continuous ambient sleep sounds.
+ * Updates navigator.mediaSession metadata upon crossfade to reflect the ambient sound.
  */
-function transitionPodcastToAmbient() {
-  // 1. Mark podcast as finished
-  state.podcast.isPlaying = false;
-  state.podcast.isActive = false;
-  updatePodcastUI();
+function trigger5sCrossfade(reasonText = 'Timed sleep transition') {
+  if (state.timedTransition.isCrossfading) return;
+  state.timedTransition.isCrossfading = true;
 
-  // 2. Determine target ambient sleep sound / mix
+  console.log(`[Timed Transition] ${reasonText}. Smoothly crossfading over 5 seconds into ambient sleep sounds...`);
+
+  // 1. Determine target ambient mix
   const target = DOM.podcastTransitionTarget ? DOM.podcastTransitionTarget.value : 'deep-rest';
   activateTargetSleepMix(target);
 
-  // 3. Immediately start ambient audio with zero volume (fadeMultiplier = 0)
-  // Ensures mobile OS does not drop the background audio session!
+  // 2. Start ambient audio looping at zero volume
   state.fadeMultiplier = 0.0;
   applyAllVolumes();
   state.isPlaying = true;
   playAllActiveSounds();
   updateMasterUI();
 
-  // 4. Update navigator.mediaSession metadata so lock screen reflects the switch immediately
+  // 3. Immediately update mediaSession metadata to reflect ambient soundscape
+  state.podcast.isActive = false;
   updateMediaSession();
 
-  // 5. Smoothly fade the sleep sound's volume in over 4 seconds (4000ms)
-  const FADE_IN_DURATION = 4000;
-  const startTimestamp = performance.now();
-  state.podcast.isFadingToSleep = true;
-
-  function fadeStep(now) {
-    const elapsed = now - startTimestamp;
-    const progress = Math.min(1.0, elapsed / FADE_IN_DURATION);
-
-    // Natural acoustic curve: sin(progress * PI / 2)
-    state.fadeMultiplier = Math.sin(progress * (Math.PI / 2));
-    applyAllVolumes();
-
-    if (progress < 1.0) {
-      requestAnimationFrame(fadeStep);
-    } else {
-      state.fadeMultiplier = 1.0;
-      state.podcast.isFadingToSleep = false;
-      applyAllVolumes();
-      console.log('[Podcast] 4-second ambient fade-in completed.');
+  // 4. Update UI banner and badge
+  showPodcastTransitionNotice(`${reasonText} &bull; Crossfading into ambient sleep sounds over 5s...`);
+  if (DOM.timedCountdownBadge) {
+    DOM.timedCountdownBadge.classList.add('is-crossfading');
+    if (DOM.timedCountdownText) {
+      DOM.timedCountdownText.textContent = 'Crossfading (5s)...';
     }
   }
 
-  requestAnimationFrame(fadeStep);
+  // 5. Smooth 5-Second Equal-Power Crossfade
+  const CROSSFADE_MS = 5000;
+  const startTimestamp = performance.now();
+  const initialPrimaryVol = DOM.audioPodcast.volume || 1.0;
 
-  // 6. Show temporary UI notification banner
-  showPodcastTransitionNotice();
+  function crossfadeStep(now) {
+    const elapsed = now - startTimestamp;
+    const progress = Math.min(1.0, elapsed / CROSSFADE_MS);
+
+    // Natural equal-power acoustic curve:
+    // primary: cos(p * PI / 2), ambient: sin(p * PI / 2)
+    const primaryGain = Math.cos(progress * (Math.PI / 2));
+    const ambientGain = Math.sin(progress * (Math.PI / 2));
+
+    DOM.audioPodcast.volume = Math.max(0, Math.min(1, initialPrimaryVol * primaryGain));
+    state.fadeMultiplier = ambientGain;
+    applyAllVolumes();
+
+    if (progress < 1.0 && state.timedTransition.isCrossfading) {
+      requestAnimationFrame(crossfadeStep);
+    } else {
+      finalizeCrossfade();
+    }
+  }
+
+  function finalizeCrossfade() {
+    if (!state.timedTransition.isCrossfading) return;
+    state.timedTransition.isCrossfading = false;
+
+    // Pause primary audio and restore full element volume
+    DOM.audioPodcast.pause();
+    DOM.audioPodcast.volume = 1.0;
+    state.podcast.isPlaying = false;
+
+    // Ambient noise is now at full master volume
+    state.fadeMultiplier = 1.0;
+    applyAllVolumes();
+
+    // Save final position in localStorage
+    if (state.timedTransition.fileKey) {
+      saveMp3Position(state.timedTransition.fileKey, DOM.audioPodcast.currentTime, state.podcast.episodeTitle);
+    }
+
+    if (DOM.timedCountdownBadge) {
+      DOM.timedCountdownBadge.classList.remove('is-crossfading');
+      if (DOM.timedCountdownText) {
+        DOM.timedCountdownText.textContent = 'Ambient Active';
+      }
+    }
+
+    updatePodcastUI();
+    updateMediaSession();
+    renderRecentSavedMp3s();
+    console.log('[Timed Transition] 5-second crossfade completed.');
+  }
+
+  requestAnimationFrame(crossfadeStep);
+
+  // Safety fallback timeout in case phone lock screen throttles requestAnimationFrame
+  setTimeout(() => {
+    if (state.timedTransition.isCrossfading) {
+      finalizeCrossfade();
+    }
+  }, CROSSFADE_MS + 250);
 }
 
 function activateTargetSleepMix(target) {
@@ -873,8 +1142,11 @@ function activateTargetSleepMix(target) {
   renderSoundCards();
 }
 
-function showPodcastTransitionNotice() {
+function showPodcastTransitionNotice(customMsg) {
   if (!DOM.podcastTransitionNotice) return;
+  if (customMsg && DOM.podcastTransitionText) {
+    DOM.podcastTransitionText.textContent = customMsg;
+  }
   DOM.podcastTransitionNotice.classList.remove('hidden');
   setTimeout(() => {
     DOM.podcastTransitionNotice.classList.add('hidden');
@@ -889,7 +1161,7 @@ function updatePodcastUI() {
     DOM.podcastActiveCard.classList.remove('hidden');
 
     if (DOM.podcastEpisodeTitle) {
-      DOM.podcastEpisodeTitle.textContent = state.podcast.episodeTitle || 'Bedtime Episode';
+      DOM.podcastEpisodeTitle.textContent = state.podcast.episodeTitle || 'Bedtime Audio Track';
     }
     if (DOM.podcastShowName) {
       DOM.podcastShowName.textContent = state.podcast.podcastName || 'Bedtime Queue';
@@ -920,15 +1192,50 @@ function queuePodcastEpisode(options) {
   state.podcast.coverUrl = options.coverUrl || 'icons/icon-192.png';
   state.podcast.audioUrl = options.audioUrl;
 
+  const fileKey = options.fileKey || (options.audioUrl ? `url_${options.audioUrl}` : `ep_${options.title}`);
+  state.timedTransition.fileKey = fileKey;
+  state.timedTransition.listenedSec = 0;
+  state.timedTransition.lastCurrentTime = null;
+  state.timedTransition.isCrossfading = false;
+
   DOM.audioPodcast.src = options.audioUrl;
   DOM.audioPodcast.currentTime = 0;
   DOM.audioPodcast.load();
+
+  // Reset countdown UI
+  if (state.timedTransition.enabled && state.timedTransition.targetDurationSec > 0) {
+    updateTimedCountdownUI(state.timedTransition.targetDurationSec);
+  }
+
+  // Check if we have a saved resume position in localStorage
+  checkAndShowResumeNotice(fileKey);
+
   DOM.audioPodcast.play().catch((err) => {
     console.warn('[Podcast] Play deferred or blocked:', err);
   });
 
   updatePodcastUI();
   updateMediaSession();
+  renderRecentSavedMp3s();
+}
+
+function handleLocalFileSelected(file) {
+  if (!file) return;
+  const objectUrl = URL.createObjectURL(file);
+  const fileKey = `local_${file.name}_${file.size}`;
+  const cleanTitle = file.name.replace(/\.[^/.]+$/, '');
+
+  queuePodcastEpisode({
+    title: cleanTitle,
+    podcastName: 'Local Audio MP3',
+    audioUrl: objectUrl,
+    fileKey: fileKey,
+    coverUrl: 'icons/icon-192.png'
+  });
+
+  if (DOM.podcastModal) {
+    DOM.podcastModal.close();
+  }
 }
 
 function formatDuration(sec) {
@@ -1359,21 +1666,109 @@ function bindEvents() {
     });
   }
 
-  // "Skip to Sleep Sound" test button: manually triggers transition
+  // "Crossfade to Sleep Sound" test button: manually triggers transition
   if (DOM.podcastEndNowBtn) {
     DOM.podcastEndNowBtn.addEventListener('click', () => {
-      DOM.audioPodcast.pause();
-      transitionPodcastToAmbient();
+      trigger5sCrossfade('Manual test crossfade');
+    });
+  }
+
+  // Resume / Start Over buttons
+  if (DOM.btnResumeMp3) {
+    DOM.btnResumeMp3.addEventListener('click', () => {
+      if (state.timedTransition.savedPosition > 0) {
+        DOM.audioPodcast.currentTime = state.timedTransition.savedPosition;
+      }
+      if (DOM.mp3ResumeNotice) {
+        DOM.mp3ResumeNotice.classList.add('hidden');
+      }
+      DOM.audioPodcast.play().catch(console.warn);
+    });
+  }
+
+  if (DOM.btnRestartMp3) {
+    DOM.btnRestartMp3.addEventListener('click', () => {
+      DOM.audioPodcast.currentTime = 0;
+      if (DOM.mp3ResumeNotice) {
+        DOM.mp3ResumeNotice.classList.add('hidden');
+      }
+      DOM.audioPodcast.play().catch(console.warn);
+    });
+  }
+
+  // Timed Duration Chips
+  if (DOM.timedDurationChips) {
+    DOM.timedDurationChips.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const val = btn.getAttribute('data-minutes');
+        if (val === 'custom') {
+          const customMin = parseInt(DOM.timedCustomInput?.value, 10) || 20;
+          setTimedDuration(customMin);
+        } else {
+          setTimedDuration(parseInt(val, 10));
+        }
+      });
+    });
+  }
+
+  // Custom Minutes Set Button
+  if (DOM.btnApplyTimedCustom && DOM.timedCustomInput) {
+    DOM.btnApplyTimedCustom.addEventListener('click', () => {
+      const min = parseInt(DOM.timedCustomInput.value, 10);
+      if (min > 0) {
+        setTimedDuration(min);
+      }
+    });
+  }
+
+  // Local MP3 File pickers (empty state + modal)
+  if (DOM.quickLocalMp3Input) {
+    DOM.quickLocalMp3Input.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) {
+        handleLocalFileSelected(e.target.files[0]);
+        e.target.value = '';
+      }
+    });
+  }
+
+  if (DOM.modalFileInput) {
+    DOM.modalFileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) {
+        handleLocalFileSelected(e.target.files[0]);
+        e.target.value = '';
+      }
+    });
+  }
+
+  // Modal Long MP3 URL button
+  if (DOM.loadLongMp3UrlBtn && DOM.longMp3Url) {
+    DOM.loadLongMp3UrlBtn.addEventListener('click', () => {
+      const url = DOM.longMp3Url.value.trim();
+      if (!url) {
+        alert('Please enter a valid audio file URL (.mp3, .m4a)');
+        return;
+      }
+      const fileKey = `url_${url}`;
+      const urlTitle = url.split('/').pop().split('?')[0].replace(/\.[^/.]+$/, '') || 'Long Audio Track';
+      queuePodcastEpisode({
+        title: urlTitle,
+        podcastName: 'Audio Stream',
+        audioUrl: url,
+        fileKey: fileKey,
+        coverUrl: 'icons/icon-192.png'
+      });
+      if (DOM.podcastModal) DOM.podcastModal.close();
     });
   }
 
   // Modal tab switching
-  if (DOM.tabPresetsBtn && DOM.tabRssBtn && DOM.tabCustomBtn) {
+  if (DOM.tabPresetsBtn || DOM.tabLongMp3Btn) {
     const tabs = [
+      { btn: DOM.tabLongMp3Btn, panel: DOM.tabLongMp3 },
       { btn: DOM.tabPresetsBtn, panel: DOM.tabPresets },
       { btn: DOM.tabRssBtn, panel: DOM.tabRss },
       { btn: DOM.tabCustomBtn, panel: DOM.tabCustom }
-    ];
+    ].filter((t) => t.btn && t.panel);
 
     tabs.forEach(({ btn, panel }) => {
       btn.addEventListener('click', () => {
@@ -1440,7 +1835,8 @@ function bindEvents() {
         title,
         podcastName: show,
         coverUrl: 'icons/icon-192.png',
-        audioUrl: url
+        audioUrl: url,
+        fileKey: `url_${url}`
       });
 
       if (DOM.podcastModal) DOM.podcastModal.close();
