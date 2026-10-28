@@ -7,7 +7,11 @@ A lightweight, mobile-first Progressive Web App (PWA) designed for deep, uninter
 ## ✨ Features
 
 - **Single-Page Vanilla Tech Stack**: Pure HTML5, CSS3, and ES6 JavaScript. No external frameworks, zero dependencies, and minimal battery drain.
-- **Native HTML5 Audio Loops**: Uses standard `<audio loop playsinline>` elements pointing to `/audio` so playback continues indefinitely when your screen is locked.
+- **100% Gapless Continuous Looping Engine**:
+  - Eliminates the brief millisecond pause inherent to standard browser `<audio loop>` seeking and MP3 encoder padding gaps.
+  - Uses dual-channel (A/B) ping-pong equal-power acoustic crossfading ($cos / sin$) to smoothly hand off playback 2.0 seconds before track completion.
+  - Sound pressure remains constant ($cos^2 + sin^2 = 1.0$), delivering silky, 100% continuous uninterrupted sleep sounds with zero drop in volume.
+  - Fully compatible with mobile background playback and screen-lock sleep mode.
 - **`navigator.mediaSession` API**: Full lock-screen and notification center controls (play, pause, multi-track dynamic titles).
 - **Sound Layering & Independent Controls**:
   - Independent volume sliders (0–100%) and mute/unmute toggles for each sound.

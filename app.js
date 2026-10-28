@@ -196,41 +196,263 @@ function cacheDOM() {
   };
 }
 
+const LOOP_OVERLAP_SEC = 2.0;
+
 /**
- * Initialize sound state and attach event listeners to <audio> tags
+ * Prime audio element on user gesture to guarantee mobile background playback
+ */
+function primeAudioElement(el) {
+  if (!el || el._isPrimed) return;
+  el._isPrimed = true;
+  const initialVol = el.volume;
+  el.volume = 0;
+  const p = el.play();
+  if (p !== undefined) {
+    p.then(() => {
+      el.pause();
+      el.currentTime = 0;
+      el.volume = initialVol;
+    }).catch(() => {});
+  }
+}
+
+/**
+ * Initialize sound state and attach event listeners to dual <audio> tags (A & B)
+ * for 100% gapless ping-pong looping without pauses or decoder stalls.
  */
 function initAudioElements() {
   SOUNDS_CONFIG.forEach((cfg) => {
-    const audioEl = document.getElementById(`audio-${cfg.id}`);
-    
-    // Ensure loop and playsinline are set
-    if (audioEl) {
-      audioEl.loop = true;
-      audioEl.playsInline = true;
-      audioEl.preload = 'auto';
+    // Try dual-channel elements first, fallback to single element for robustness
+    let elA = document.getElementById(`audio-${cfg.id}-a`);
+    let elB = document.getElementById(`audio-${cfg.id}-b`);
 
-      // Keep audio playing seamlessly if browser emits loop boundary
-      audioEl.addEventListener('ended', () => {
-        if (state.sounds[cfg.id]?.isActive && state.isPlaying) {
-          audioEl.currentTime = 0;
-          audioEl.play().catch(() => {});
-        }
+    if (!elA) {
+      elA = document.getElementById(`audio-${cfg.id}`);
+    }
+
+    [elA, elB].forEach((el, index) => {
+      if (!el) return;
+      el.loop = false; // Disable native loop so browser never seeks & halts
+      el.playsInline = true;
+      el.preload = 'auto';
+
+      const channelName = index === 0 ? 'A' : 'B';
+
+      el.addEventListener('timeupdate', () => {
+        handleLooperTimeUpdate(cfg.id, channelName);
       });
-    }
 
-    if (!state.sounds[cfg.id]) {
-      state.sounds[cfg.id] = {
-        volume: cfg.defaultVol,
-        muted: false,
-        isActive: false,
-        el: audioEl
-      };
-    } else {
-      state.sounds[cfg.id].el = audioEl;
-    }
+      el.addEventListener('ended', () => {
+        handleLooperEnded(cfg.id, channelName);
+      });
+    });
+
+    const prevVolume = state.sounds[cfg.id]?.volume ?? cfg.defaultVol;
+    const prevMuted = state.sounds[cfg.id]?.muted ?? false;
+    const prevActive = state.sounds[cfg.id]?.isActive ?? false;
+
+    state.sounds[cfg.id] = {
+      volume: prevVolume,
+      muted: prevMuted,
+      isActive: prevActive,
+      elA: elA,
+      elB: elB,
+      activeChannel: 'A',
+      isCrossfading: false,
+      crossfadeTarget: 'B',
+      crossfadeStartTime: 0,
+      crossfadeDurationMs: LOOP_OVERLAP_SEC * 1000,
+      weightA: 1.0,
+      weightB: 0.0,
+      crossfadeTimer: null
+    };
+
+    // Backward-compatible getter for .el
+    Object.defineProperty(state.sounds[cfg.id], 'el', {
+      get() {
+        return this.activeChannel === 'A' ? this.elA : this.elB;
+      },
+      configurable: true
+    });
   });
 
   applyAllVolumes();
+}
+
+/**
+ * Monitor playback progress on active channel to initiate seamless pre-end crossfade
+ */
+function handleLooperTimeUpdate(soundId, channel) {
+  const s = state.sounds[soundId];
+  if (!s || !s.isActive || !state.isPlaying) return;
+
+  // If in crossfade, advance volume step (crucial for mobile lock screen where RAF is paused)
+  if (s.isCrossfading) {
+    updateLooperCrossfadeStep(soundId);
+    return;
+  }
+
+  // Only the active channel initiates the handoff to the alternate channel
+  if (s.activeChannel !== channel) return;
+
+  const currentEl = channel === 'A' ? s.elA : s.elB;
+  if (!currentEl || !currentEl.duration || isNaN(currentEl.duration) || currentEl.duration <= LOOP_OVERLAP_SEC) return;
+
+  const remaining = currentEl.duration - currentEl.currentTime;
+  if (remaining <= LOOP_OVERLAP_SEC && remaining > 0) {
+    startSeamlessLooperCrossfade(soundId);
+  }
+}
+
+/**
+ * Start equal-power 2-second acoustic crossfade into the alternate channel
+ */
+function startSeamlessLooperCrossfade(soundId) {
+  const s = state.sounds[soundId];
+  if (!s || s.isCrossfading || !s.isActive || !state.isPlaying) return;
+
+  // If no second channel exists, fallback to single channel loop
+  if (!s.elB) {
+    if (s.elA) {
+      s.elA.currentTime = 0;
+      s.elA.play().catch(() => {});
+    }
+    return;
+  }
+
+  const fromChannel = s.activeChannel;
+  const toChannel = fromChannel === 'A' ? 'B' : 'A';
+  const targetEl = toChannel === 'A' ? s.elA : s.elB;
+
+  s.isCrossfading = true;
+  s.crossfadeTarget = toChannel;
+  s.crossfadeStartTime = performance.now();
+  s.crossfadeDurationMs = LOOP_OVERLAP_SEC * 1000;
+
+  // Start incoming channel slightly past initial silence/padding
+  targetEl.currentTime = 0.05;
+  const playPromise = targetEl.play();
+  if (playPromise !== undefined) {
+    playPromise.catch((err) => {
+      console.warn(`[Looper] Channel ${toChannel} play deferred for ${soundId}:`, err);
+    });
+  }
+
+  applyVolume(soundId);
+
+  // Crossfade step executor
+  function step() {
+    updateLooperCrossfadeStep(soundId);
+    if (s.isCrossfading) {
+      s.crossfadeTimer = setTimeout(step, 35);
+    }
+  }
+
+  if (s.crossfadeTimer) {
+    clearTimeout(s.crossfadeTimer);
+  }
+  s.crossfadeTimer = setTimeout(step, 35);
+}
+
+/**
+ * Step function for equal-power crossfade between Channel A and B
+ */
+function updateLooperCrossfadeStep(soundId) {
+  const s = state.sounds[soundId];
+  if (!s || !s.isCrossfading || !s.isActive || !state.isPlaying) return;
+
+  const now = performance.now();
+  const elapsed = now - s.crossfadeStartTime;
+  const progress = Math.min(1.0, elapsed / s.crossfadeDurationMs);
+
+  // Equal-power acoustic curve: cos^2 + sin^2 = 1.0 (constant perceived loudness)
+  const fadeOutWeight = Math.cos(progress * (Math.PI / 2));
+  const fadeInWeight = Math.sin(progress * (Math.PI / 2));
+
+  if (s.activeChannel === 'A') {
+    s.weightA = fadeOutWeight;
+    s.weightB = fadeInWeight;
+  } else {
+    s.weightA = fadeInWeight;
+    s.weightB = fadeOutWeight;
+  }
+
+  applyVolume(soundId);
+
+  if (progress >= 1.0) {
+    finalizeLooperCrossfadeHandoff(soundId);
+  }
+}
+
+/**
+ * Complete loop transition: pause and reset outgoing channel, confirm new active channel
+ */
+function finalizeLooperCrossfadeHandoff(soundId) {
+  const s = state.sounds[soundId];
+  if (!s || !s.isCrossfading) return;
+
+  if (s.crossfadeTimer) {
+    clearTimeout(s.crossfadeTimer);
+    s.crossfadeTimer = null;
+  }
+
+  s.isCrossfading = false;
+  const newChannel = s.crossfadeTarget;
+  const oldChannel = newChannel === 'A' ? 'B' : 'A';
+  const oldEl = oldChannel === 'A' ? s.elA : s.elB;
+
+  s.activeChannel = newChannel;
+
+  if (newChannel === 'A') {
+    s.weightA = 1.0;
+    s.weightB = 0.0;
+  } else {
+    s.weightA = 0.0;
+    s.weightB = 1.0;
+  }
+
+  // Old channel rests at 0 volume and rewinds to 0
+  if (oldEl) {
+    oldEl.pause();
+    oldEl.currentTime = 0;
+  }
+
+  applyVolume(soundId);
+}
+
+/**
+ * Fallback in case active channel finishes before crossfade completes
+ */
+function handleLooperEnded(soundId, channel) {
+  const s = state.sounds[soundId];
+  if (!s || !s.isActive || !state.isPlaying) return;
+
+  if (s.activeChannel === channel) {
+    if (s.isCrossfading) {
+      finalizeLooperCrossfadeHandoff(soundId);
+    } else if (s.elB) {
+      // Instant emergency handoff to alternate channel
+      const toChannel = channel === 'A' ? 'B' : 'A';
+      const targetEl = toChannel === 'A' ? s.elA : s.elB;
+      const currentEl = channel === 'A' ? s.elA : s.elB;
+
+      s.activeChannel = toChannel;
+      s.weightA = toChannel === 'A' ? 1.0 : 0.0;
+      s.weightB = toChannel === 'B' ? 1.0 : 0.0;
+
+      targetEl.currentTime = 0.05;
+      targetEl.play().catch(() => {});
+
+      if (currentEl) {
+        currentEl.pause();
+        currentEl.currentTime = 0;
+      }
+      applyVolume(soundId);
+    } else if (s.elA) {
+      s.elA.currentTime = 0;
+      s.elA.play().catch(() => {});
+    }
+  }
 }
 
 /**
@@ -434,41 +656,84 @@ function pauseAllSounds() {
 
 function playSoundElement(soundId) {
   const s = state.sounds[soundId];
-  if (!s || !s.el) return;
+  if (!s) return;
+
+  // If paused mid-crossfade, finalize cleanly first
+  if (s.isCrossfading) {
+    finalizeLooperCrossfadeHandoff(soundId);
+  }
+
+  const activeEl = s.activeChannel === 'A' ? s.elA : s.elB;
+  const idleEl = s.activeChannel === 'A' ? s.elB : s.elA;
+
+  // Prime both channels during user gesture so iOS Safari never blocks handoff
+  primeAudioElement(activeEl);
+  primeAudioElement(idleEl);
+
+  if (idleEl) {
+    idleEl.pause();
+    idleEl.currentTime = 0;
+  }
+
+  if (s.activeChannel === 'A') {
+    s.weightA = 1.0;
+    s.weightB = 0.0;
+  } else {
+    s.weightA = 0.0;
+    s.weightB = 1.0;
+  }
 
   applyVolume(soundId);
-  s.el.currentTime = s.el.currentTime || 0;
-  
-  const playPromise = s.el.play();
-  if (playPromise !== undefined) {
-    playPromise.catch((err) => {
-      console.warn(`[Audio] Play deferred or blocked for ${soundId}:`, err);
-    });
+
+  if (activeEl) {
+    activeEl.currentTime = activeEl.currentTime || 0;
+    const playPromise = activeEl.play();
+    if (playPromise !== undefined) {
+      playPromise.catch((err) => {
+        console.warn(`[Audio] Play deferred or blocked for ${soundId}:`, err);
+      });
+    }
   }
 }
 
 function pauseSoundElement(soundId) {
   const s = state.sounds[soundId];
-  if (s && s.el) {
-    s.el.pause();
+  if (!s) return;
+
+  if (s.crossfadeTimer) {
+    clearTimeout(s.crossfadeTimer);
+    s.crossfadeTimer = null;
   }
+
+  // If paused during crossfade, finalize so we resume on target channel cleanly
+  if (s.isCrossfading) {
+    finalizeLooperCrossfadeHandoff(soundId);
+  }
+
+  if (s.elA) s.elA.pause();
+  if (s.elB) s.elB.pause();
 }
 
 /**
- * Calculate and apply effective volume to an individual audio element
- * effectiveVolume = (masterMuted || soundMuted) ? 0 : (soundVol * masterVol * fadeMultiplier)
+ * Calculate and apply effective volume to dual audio channels with equal-power weighting
+ * effectiveVolume = (masterMuted || soundMuted) ? 0 : (soundVol * masterVol * fadeMultiplier) * channelWeight
  */
 function applyVolume(soundId) {
   const s = state.sounds[soundId];
-  if (!s || !s.el) return;
+  if (!s) return;
 
-  let vol = 0;
+  let baseVol = 0;
   if (!state.masterMuted && !s.muted) {
     const rawRatio = (s.volume / 100) * (state.masterVolume / 100) * state.fadeMultiplier;
-    vol = Math.max(0, Math.min(1, rawRatio));
+    baseVol = Math.max(0, Math.min(1, rawRatio));
   }
 
-  s.el.volume = vol;
+  if (s.elA) {
+    s.elA.volume = Math.max(0, Math.min(1, baseVol * s.weightA));
+  }
+  if (s.elB) {
+    s.elB.volume = Math.max(0, Math.min(1, baseVol * s.weightB));
+  }
 }
 
 function applyAllVolumes() {
