@@ -1,5 +1,5 @@
 // Sleep Noise PWA - Service Worker with Full Offline Audio & HTTP Range Support
-const CACHE_NAME = 'sleep-noise-v4';
+const CACHE_NAME = 'sleep-noise-v5';
 
 const AUDIO_ASSETS = [
   './audio/brown-noise.mp3',
