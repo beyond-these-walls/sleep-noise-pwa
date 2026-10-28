@@ -2213,19 +2213,30 @@ async function updateNetworkStatus() {
 function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
+      let refreshing = false;
+
       navigator.serviceWorker.register('./sw.js')
         .then((reg) => {
           console.log('[SW] Service Worker registered with scope:', reg.scope);
 
-          // If a new worker is installing, listen for state changes
-          if (reg.installing) {
-            reg.installing.addEventListener('statechange', (e) => {
-              if (e.target.state === 'installed') {
-                console.log('[SW] Audio pre-caching finished.');
-                updateNetworkStatus();
-              }
-            });
-          }
+          // Proactively check for updates immediately on launch
+          reg.update().catch(() => {});
+
+          // Listen for new service worker installation
+          reg.addEventListener('updatefound', () => {
+            const newWorker = reg.installing;
+            if (newWorker) {
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  console.log('[SW] New version installed and ready.');
+                  if (!refreshing && !state.isPlaying) {
+                    refreshing = true;
+                    window.location.reload();
+                  }
+                }
+              });
+            }
+          });
 
           // Periodic check to verify audio cache completeness
           setTimeout(updateNetworkStatus, 1500);
@@ -2238,6 +2249,10 @@ function registerServiceWorker() {
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         console.log('[SW] Service Worker controller changed.');
         updateNetworkStatus();
+        if (!refreshing && !state.isPlaying) {
+          refreshing = true;
+          window.location.reload();
+        }
       });
     });
   }
