@@ -1,10 +1,58 @@
 /**
  * Sleep Noise PWA - Core Application Logic
- * Pure vanilla JavaScript: Zero frameworks, lightweight, battery-friendly.
+ * Pure vanilla JavaScript: Zero external dependencies, ultra-lightweight, battery-friendly.
  */
 
-// Sound definitions matching the generated /audio files
+// Sound definitions matching the generated /audio seamless files
 const SOUNDS_CONFIG = [
+  {
+    id: 'rain-calm',
+    name: 'Calming Rain',
+    desc: 'Continuous soothing rainfall loop',
+    emoji: '🌧️',
+    file: 'audio/rain-calm.mp3',
+    defaultVol: 80
+  },
+  {
+    id: 'thunderstorm',
+    name: 'Cozy Thunderstorm',
+    desc: 'Rainfall with rolling distant thunder',
+    emoji: '⛈️',
+    file: 'audio/thunderstorm.mp3',
+    defaultVol: 65
+  },
+  {
+    id: 'rain-light',
+    name: 'Gentle Rain',
+    desc: 'Soft peaceful raindrops tapping outside',
+    emoji: '💧',
+    file: 'audio/rain-light.mp3',
+    defaultVol: 60
+  },
+  {
+    id: 'rain-distant-thunder',
+    name: 'Summer Storm',
+    desc: 'Peaceful summer rain with rumbling thunder',
+    emoji: '🌩️',
+    file: 'audio/rain-distant-thunder.mp3',
+    defaultVol: 60
+  },
+  {
+    id: 'ocean-waves',
+    name: 'Ocean Waves',
+    desc: 'Rhythmic gentle waves washing ashore',
+    emoji: '🌊',
+    file: 'audio/ocean-waves.mp3',
+    defaultVol: 70
+  },
+  {
+    id: 'river-stream',
+    name: 'Forest Stream',
+    desc: 'Bubbling mountain brook flowing over stones',
+    emoji: '🏞️',
+    file: 'audio/river-stream.mp3',
+    defaultVol: 65
+  },
   {
     id: 'brown-noise',
     name: 'Brown Noise',
@@ -14,17 +62,9 @@ const SOUNDS_CONFIG = [
     defaultVol: 75
   },
   {
-    id: 'rain',
-    name: 'Calming Rain',
-    desc: 'Continuous soothing rainfall loop',
-    emoji: '🌧️',
-    file: 'audio/rain.mp3',
-    defaultVol: 80
-  },
-  {
     id: 'white-noise',
     name: 'White Noise',
-    desc: 'Crisp even spectrum to mask sudden background noises',
+    desc: 'Crisp even spectrum to mask sudden noises',
     emoji: '⚪',
     file: 'audio/white-noise.mp3',
     defaultVol: 50
@@ -32,30 +72,14 @@ const SOUNDS_CONFIG = [
   {
     id: 'pink-noise',
     name: 'Pink Noise',
-    desc: 'Gentle balanced frequencies for deep slow-wave sleep',
+    desc: 'Gentle balanced frequencies for slow-wave rest',
     emoji: '🌸',
     file: 'audio/pink-noise.mp3',
-    defaultVol: 60
-  },
-  {
-    id: 'rain-thunder',
-    name: 'Rain & Thunder',
-    desc: 'Calming rain with distant rolling thunder',
-    emoji: '⛈️',
-    file: 'audio/rain-thunder.mp3',
-    defaultVol: 65
-  },
-  {
-    id: 'gentle-rain',
-    name: 'Gentle Rain',
-    desc: 'Soft peaceful raindrops tapping outside',
-    emoji: '💧',
-    file: 'audio/gentle-rain.mp3',
     defaultVol: 60
   }
 ];
 
-// App State
+// Application State
 const state = {
   masterVolume: 80,
   masterMuted: false,
@@ -87,7 +111,7 @@ const state = {
     listenedSec: 0,
     lastCurrentTime: null,
     isCrossfading: false,
-    crossfadeDurationMs: 5000,
+    crossfadeIntervalId: null,
     fileKey: '',
     savedPosition: 0
   }
@@ -96,7 +120,128 @@ const state = {
 // DOM Cache
 let DOM = {};
 
-// Initialize application on DOM ready
+// ============================================================================
+// IndexedDB for Persistent Local MP3 Audio Files
+// ============================================================================
+const IDB_NAME = 'SleepNoiseDB';
+const IDB_VERSION = 1;
+const IDB_STORE = 'local_audio_files';
+
+function openAudioDB() {
+  return new Promise((resolve, reject) => {
+    if (!('indexedDB' in window)) {
+      resolve(null);
+      return;
+    }
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE, { keyPath: 'key' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => {
+      console.warn('[IDB] Failed to open IndexedDB:', req.error);
+      resolve(null);
+    };
+  });
+}
+
+async function saveLocalFileToDB(fileKey, fileObj, position = 0) {
+  try {
+    const db = await openAudioDB();
+    if (!db) return null;
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    const store = tx.objectStore(IDB_STORE);
+    const record = {
+      key: fileKey,
+      name: fileObj.name,
+      size: fileObj.size,
+      type: fileObj.type || 'audio/mpeg',
+      blob: fileObj, // Browsers support File/Blob in IndexedDB
+      lastPosition: Math.floor(position),
+      updatedAt: Date.now()
+    };
+    store.put(record);
+    return new Promise((resolve) => {
+      tx.oncomplete = () => {
+        try {
+          localStorage.setItem('sleep_last_local_file_key', fileKey);
+        } catch (e) {}
+        resolve(record);
+      };
+      tx.onerror = () => resolve(null);
+    });
+  } catch (err) {
+    console.warn('[IDB] saveLocalFileToDB error:', err);
+    return null;
+  }
+}
+
+async function getStoredLocalFileFromDB(fileKey) {
+  try {
+    const db = await openAudioDB();
+    if (!db) return null;
+    const tx = db.transaction(IDB_STORE, 'readonly');
+    const store = tx.objectStore(IDB_STORE);
+    const req = store.get(fileKey);
+    return new Promise((resolve) => {
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch (err) {
+    return null;
+  }
+}
+
+async function getAllStoredLocalFilesFromDB() {
+  try {
+    const db = await openAudioDB();
+    if (!db) return [];
+    const tx = db.transaction(IDB_STORE, 'readonly');
+    const store = tx.objectStore(IDB_STORE);
+    const req = store.getAll();
+    return new Promise((resolve) => {
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    });
+  } catch (err) {
+    return [];
+  }
+}
+
+async function updateStoredFilePositionInDB(fileKey, position) {
+  if (!fileKey) return;
+  try {
+    const db = await openAudioDB();
+    if (!db) return;
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    const store = tx.objectStore(IDB_STORE);
+    const req = store.get(fileKey);
+    req.onsuccess = () => {
+      if (req.result) {
+        req.result.lastPosition = Math.floor(position);
+        req.result.updatedAt = Date.now();
+        store.put(req.result);
+      }
+    };
+  } catch (err) {}
+}
+
+async function deleteStoredFileFromDB(fileKey) {
+  try {
+    const db = await openAudioDB();
+    if (!db) return;
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    const store = tx.objectStore(IDB_STORE);
+    store.delete(fileKey);
+  } catch (err) {}
+}
+
+// ============================================================================
+// Initialization on DOM Ready
+// ============================================================================
 document.addEventListener('DOMContentLoaded', () => {
   cacheDOM();
   loadStoredPreferences();
@@ -108,7 +253,7 @@ document.addEventListener('DOMContentLoaded', () => {
   registerServiceWorker();
   updateMasterUI();
   setTimedDuration(30);
-  renderRecentSavedMp3s();
+  restoreLastRememberedAudio();
 });
 
 function cacheDOM() {
@@ -134,7 +279,7 @@ function cacheDOM() {
     pwaDismissBtn: document.getElementById('pwaDismissBtn'),
     offlineBadge: document.getElementById('offlineBadge'),
 
-    // Podcast Queue DOM Elements
+    // Podcast & Local MP3 DOM Elements
     audioPodcast: document.getElementById('audio-podcast'),
     openPodcastModalBtn: document.getElementById('openPodcastModalBtn'),
     podcastModal: document.getElementById('podcastModal'),
@@ -196,65 +341,18 @@ function cacheDOM() {
   };
 }
 
-// Staggered offsets for Channel B: 50% midpoint of each audio track.
-// When Channel A reaches the end and loops, Channel B is playing at its midpoint.
-// When Channel B reaches the end and loops, Channel A is playing at its midpoint.
-// Because both have native loop=true and run concurrently, Android never throttles
-// or defers playback, and there is ZERO pause or gap at any loop boundary!
-const SOUND_OFFSETS = {
-  'brown-noise': 30.0,
-  'white-noise': 30.0,
-  'pink-noise': 30.0,
-  'rain-thunder': 24.0,
-  'rain': 90.0,
-  'gentle-rain': 300.0
-};
-
 /**
- * Prime audio element on user gesture to guarantee mobile background playback permissions
- */
-function primeAudioElement(el) {
-  if (!el || el._isPrimed) return;
-  el._isPrimed = true;
-  const initialVol = el.volume;
-  el.volume = 0;
-  const p = el.play();
-  if (p !== undefined) {
-    p.then(() => {
-      el.pause();
-      el.currentTime = 0;
-      el.volume = initialVol;
-    }).catch(() => {});
-  }
-}
-
-/**
- * Initialize sound state and attach event listeners to dual <audio> tags (A & B)
- * Both channels have native loop=true for 100% reliable Android background playback.
+ * Initialize sound state and attach single clean hardware loop to audio elements.
+ * Native hardware loop=true ensures seamless, gapless playback on mobile with screen locked.
  */
 function initAudioElements() {
   SOUNDS_CONFIG.forEach((cfg) => {
-    let elA = document.getElementById(`audio-${cfg.id}-a`);
-    let elB = document.getElementById(`audio-${cfg.id}-b`);
-
-    if (!elA) {
-      elA = document.getElementById(`audio-${cfg.id}`);
-    }
-
-    [elA, elB].forEach((el) => {
-      if (!el) return;
-      el.loop = true; // Native hardware C++ looping so Android never halts or throttles when locked!
+    let el = document.getElementById(`audio-${cfg.id}`);
+    if (el) {
+      el.loop = true; // Native hardware C++ looping: zero battery drain, zero background throttling
       el.playsInline = true;
       el.preload = 'auto';
-
-      // Fallback in case browser triggers ended event instead of seamless loop
-      el.addEventListener('ended', () => {
-        if (state.sounds[cfg.id]?.isActive && state.isPlaying) {
-          el.currentTime = 0;
-          el.play().catch(() => {});
-        }
-      });
-    });
+    }
 
     const prevVolume = state.sounds[cfg.id]?.volume ?? cfg.defaultVol;
     const prevMuted = state.sounds[cfg.id]?.muted ?? false;
@@ -264,17 +362,8 @@ function initAudioElements() {
       volume: prevVolume,
       muted: prevMuted,
       isActive: prevActive,
-      elA: elA,
-      elB: elB
+      el: el
     };
-
-    // Backward-compatible getter for .el
-    Object.defineProperty(state.sounds[cfg.id], 'el', {
-      get() {
-        return this.elA || this.elB;
-      },
-      configurable: true
-    });
   });
 
   applyAllVolumes();
@@ -385,14 +474,12 @@ function toggleSound(soundId) {
   s.isActive = !s.isActive;
 
   if (s.isActive) {
-    // If master is not playing yet, turn on master playback!
     if (!state.isPlaying) {
       state.isPlaying = true;
     }
     playSoundElement(soundId);
   } else {
     pauseSoundElement(soundId);
-    // Check if any sounds are still active
     const anyActive = Object.values(state.sounds).some((item) => item.isActive);
     if (!anyActive) {
       state.isPlaying = false;
@@ -405,9 +492,6 @@ function toggleSound(soundId) {
   updateMediaSession();
 }
 
-/**
- * Toggle individual sound mute
- */
 function toggleSoundMute(soundId) {
   const s = state.sounds[soundId];
   if (!s) return;
@@ -418,9 +502,6 @@ function toggleSoundMute(soundId) {
   updateSoundCardUI(soundId);
 }
 
-/**
- * Set individual sound volume (0-100)
- */
 function setSoundVolume(soundId, volume) {
   const s = state.sounds[soundId];
   if (!s) return;
@@ -436,23 +517,20 @@ function setSoundVolume(soundId, volume) {
 }
 
 /**
- * Master Play / Pause logic
+ * Master Play / Pause logic - Direct & Instant Start
  */
 function handleMasterToggle() {
   if (state.isPlaying) {
-    // Pause all sounds
     pauseAllSounds();
     state.isPlaying = false;
   } else {
-    // Check if any sound is already active
+    // If no sounds are active, enable the default calming bedtime mix
     const activeSounds = Object.keys(state.sounds).filter((id) => state.sounds[id].isActive);
-    
     if (activeSounds.length === 0) {
-      // Default bedtime combo: Brown Noise + Calming Rain
-      state.sounds['brown-noise'].isActive = true;
-      state.sounds['rain'].isActive = true;
+      if (state.sounds['rain-calm']) state.sounds['rain-calm'].isActive = true;
+      if (state.sounds['brown-noise']) state.sounds['brown-noise'].isActive = true;
+      updateSoundCardUI('rain-calm');
       updateSoundCardUI('brown-noise');
-      updateSoundCardUI('rain');
     }
 
     state.isPlaying = true;
@@ -481,82 +559,40 @@ function pauseAllSounds() {
 
 function playSoundElement(soundId) {
   const s = state.sounds[soundId];
-  if (!s) return;
+  if (!s || !s.el) return;
 
-  // Prime both channels during user gesture so iOS & Android never block them
-  primeAudioElement(s.elA);
-  primeAudioElement(s.elB);
-
-  // Apply volume before starting playback
   applyVolume(soundId);
 
-  // Start Channel A (from its current position or 0)
-  if (s.elA) {
-    s.elA.currentTime = s.elA.currentTime || 0;
-    const pA = s.elA.play();
-    if (pA !== undefined) {
-      pA.catch((err) => {
-        console.warn(`[Audio] Play A deferred for ${soundId}:`, err);
-      });
-    }
-  }
-
-  // Start Channel B staggered at 50% midpoint of the track
-  // This guarantees when Channel A loops, Channel B is at peak playback, and vice versa!
-  if (s.elB) {
-    if (!s.elB.currentTime || s.elB.currentTime === 0) {
-      const offset = SOUND_OFFSETS[soundId] || 30.0;
-      s.elB.currentTime = offset;
-    }
-    const pB = s.elB.play();
-    if (pB !== undefined) {
-      pB.catch((err) => {
-        console.warn(`[Audio] Play B deferred for ${soundId}:`, err);
-      });
-    }
+  const p = s.el.play();
+  if (p !== undefined) {
+    p.catch((err) => {
+      console.warn(`[Audio] Play deferred for ${soundId}:`, err);
+    });
   }
 }
 
 function pauseSoundElement(soundId) {
   const s = state.sounds[soundId];
-  if (!s) return;
-  if (s.elA) s.elA.pause();
-  if (s.elB) s.elB.pause();
+  if (!s || !s.el) return;
+  s.el.pause();
 }
 
-/**
- * Calculate and apply effective volume to dual audio channels with equal-power weighting
- * (baseVol * 0.7071)^2 + (baseVol * 0.7071)^2 = baseVol^2 (perfect perceived volume)
- */
 function applyVolume(soundId) {
   const s = state.sounds[soundId];
-  if (!s) return;
+  if (!s || !s.el) return;
 
-  let baseVol = 0;
+  let vol = 0;
   if (!state.masterMuted && !s.muted) {
     const rawRatio = (s.volume / 100) * (state.masterVolume / 100) * state.fadeMultiplier;
-    baseVol = Math.max(0, Math.min(1, rawRatio));
+    vol = Math.max(0, Math.min(1, rawRatio));
   }
-
-  // Equal-power distribution between the two continuous staggered channels:
-  if (s.elA && s.elB) {
-    const chVol = Math.max(0, Math.min(1, baseVol * 0.70710678));
-    s.elA.volume = chVol;
-    s.elB.volume = chVol;
-  } else if (s.elA) {
-    s.elA.volume = baseVol;
-  } else if (s.elB) {
-    s.elB.volume = baseVol;
-  }
+  s.el.volume = vol;
 }
 
 function applyAllVolumes() {
   Object.keys(state.sounds).forEach((id) => applyVolume(id));
 }
 
-/**
- * Update UI for Master controls
- */
 function updateMasterUI() {
   if (!DOM.masterPlayBtn) return;
 
@@ -570,58 +606,35 @@ function updateMasterUI() {
     DOM.masterPauseIcon.classList.remove('hidden');
     DOM.masterPlayText.textContent = 'Pause Sleep Sounds';
     
-    if (DOM.nowPlayingIndicator) {
-      DOM.nowPlayingIndicator.classList.add('active');
-    }
-    if (DOM.nowPlayingText) {
-      DOM.nowPlayingText.textContent = activeNames.join(' + ');
-    }
+    if (DOM.nowPlayingIndicator) DOM.nowPlayingIndicator.classList.add('active');
+    if (DOM.nowPlayingText) DOM.nowPlayingText.textContent = activeNames.join(' + ');
   } else {
     DOM.masterPlayBtn.classList.remove('is-playing');
     DOM.masterPlayIcon.classList.remove('hidden');
     DOM.masterPauseIcon.classList.add('hidden');
     DOM.masterPlayText.textContent = 'Start Sleep Sounds';
 
-    if (DOM.nowPlayingIndicator) {
-      DOM.nowPlayingIndicator.classList.remove('active');
-    }
+    if (DOM.nowPlayingIndicator) DOM.nowPlayingIndicator.classList.remove('active');
     if (DOM.nowPlayingText) {
       DOM.nowPlayingText.textContent = activeNames.length > 0 ? `${activeNames.length} layer(s) paused` : 'Silence';
     }
   }
 
-  // Master Volume range & value
-  if (DOM.masterVolumeRange) {
-    DOM.masterVolumeRange.value = state.masterVolume;
-  }
-  if (DOM.masterVolumeValue) {
-    DOM.masterVolumeValue.textContent = `${state.masterVolume}%`;
-  }
+  if (DOM.masterVolumeRange) DOM.masterVolumeRange.value = state.masterVolume;
+  if (DOM.masterVolumeValue) DOM.masterVolumeValue.textContent = `${state.masterVolume}%`;
   if (DOM.masterMuteBtn) {
     DOM.masterMuteBtn.setAttribute('aria-pressed', state.masterMuted ? 'true' : 'false');
     DOM.masterMuteBtn.querySelector('.mute-text').textContent = state.masterMuted ? 'Unmute' : 'Mute';
   }
 }
 
-/**
- * Update card UI on toggle or mute
- */
 function updateSoundCardUI(soundId) {
   const card = document.getElementById(`card-${soundId}`);
   const s = state.sounds[soundId];
   if (!card || !s) return;
 
-  if (s.isActive) {
-    card.classList.add('is-active');
-  } else {
-    card.classList.remove('is-active');
-  }
-
-  if (s.muted) {
-    card.classList.add('is-muted');
-  } else {
-    card.classList.remove('is-muted');
-  }
+  card.classList.toggle('is-active', s.isActive);
+  card.classList.toggle('is-muted', s.muted);
 
   const toggleBtn = card.querySelector('.card-toggle-btn');
   if (toggleBtn) {
@@ -644,42 +657,39 @@ function updateSoundCardUI(soundId) {
 }
 
 /**
- * Quick Preset soundscapes
+ * Quick Presets
  */
 function applyPreset(presetKey) {
-  // Pause all sounds first
   pauseAllSounds();
   Object.keys(state.sounds).forEach((id) => {
     state.sounds[id].isActive = false;
   });
 
   if (presetKey === 'deep-rest') {
-    // Brown Noise (80%) + Calming Rain (75%)
+    state.sounds['rain-calm'].isActive = true;
+    state.sounds['rain-calm'].volume = 80;
     state.sounds['brown-noise'].isActive = true;
-    state.sounds['brown-noise'].volume = 80;
-    state.sounds['rain'].isActive = true;
-    state.sounds['rain'].volume = 75;
+    state.sounds['brown-noise'].volume = 75;
     state.isPlaying = true;
   } else if (presetKey === 'rainy-night') {
-    // Calming Rain (85%) + Gentle Rain (50%)
-    state.sounds['rain'].isActive = true;
-    state.sounds['rain'].volume = 85;
-    state.sounds['gentle-rain'].isActive = true;
-    state.sounds['gentle-rain'].volume = 50;
+    state.sounds['rain-calm'].isActive = true;
+    state.sounds['rain-calm'].volume = 80;
+    state.sounds['rain-light'].isActive = true;
+    state.sounds['rain-light'].volume = 55;
     state.isPlaying = true;
   } else if (presetKey === 'cozy-storm') {
-    // Calming Rain (70%) + Rain & Thunder (65%) + Brown Noise (40%)
-    state.sounds['rain'].isActive = true;
-    state.sounds['rain'].volume = 70;
-    state.sounds['rain-thunder'].isActive = true;
-    state.sounds['rain-thunder'].volume = 65;
+    state.sounds['rain-calm'].isActive = true;
+    state.sounds['rain-calm'].volume = 65;
+    state.sounds['thunderstorm'].isActive = true;
+    state.sounds['thunderstorm'].volume = 70;
     state.sounds['brown-noise'].isActive = true;
     state.sounds['brown-noise'].volume = 40;
     state.isPlaying = true;
   } else if (presetKey === 'pure-noise') {
-    // White Noise (70%)
     state.sounds['white-noise'].isActive = true;
     state.sounds['white-noise'].volume = 70;
+    state.sounds['pink-noise'].isActive = true;
+    state.sounds['pink-noise'].volume = 45;
     state.isPlaying = true;
   } else if (presetKey === 'clear-all') {
     state.isPlaying = false;
@@ -696,10 +706,9 @@ function applyPreset(presetKey) {
 }
 
 /**
- * Sleep Timer with Smooth Master Volume Fadeout
+ * Sleep Timer with Smooth Volume Fadeout
  */
 function setSleepTimer(minutes) {
-  // Clear any existing timer interval
   if (state.timer.intervalId) {
     clearInterval(state.timer.intervalId);
     state.timer.intervalId = null;
@@ -709,20 +718,13 @@ function setSleepTimer(minutes) {
   state.fadeMultiplier = 1.0;
   applyAllVolumes();
 
-  if (DOM.fadeNotice) {
-    DOM.fadeNotice.classList.add('hidden');
-  }
+  if (DOM.fadeNotice) DOM.fadeNotice.classList.add('hidden');
 
-  // Update timer chips UI
   DOM.timerButtons.forEach((btn) => {
     const btnMin = parseInt(btn.getAttribute('data-minutes'), 10);
-    if (btnMin === minutes) {
-      btn.classList.add('active');
-      btn.setAttribute('aria-checked', 'true');
-    } else {
-      btn.classList.remove('active');
-      btn.setAttribute('aria-checked', 'false');
-    }
+    const isMatch = (btnMin === minutes);
+    btn.classList.toggle('active', isMatch);
+    btn.setAttribute('aria-checked', isMatch ? 'true' : 'false');
   });
 
   if (minutes === 0) {
@@ -731,16 +733,11 @@ function setSleepTimer(minutes) {
     return;
   }
 
-  // Calculate target end timestamp
   const totalSeconds = minutes * 60;
   state.timer.endTime = Date.now() + (totalSeconds * 1000);
   DOM.timerCountdown.classList.add('is-counting');
-  
-  // Fadeout window: 60 seconds (or half total duration if short)
-  const fadeDuration = Math.min(60, Math.floor(totalSeconds / 2));
-  state.timer.fadeSeconds = fadeDuration;
+  state.timer.fadeSeconds = Math.min(60, Math.floor(totalSeconds / 2));
 
-  // Run countdown tick
   updateTimerTick();
   state.timer.intervalId = setInterval(updateTimerTick, 1000);
 }
@@ -752,12 +749,10 @@ function updateTimerTick() {
   const secondsRemaining = Math.max(0, Math.round(msRemaining / 1000));
 
   if (secondsRemaining <= 0) {
-    // Timer expired!
     clearInterval(state.timer.intervalId);
     state.timer.intervalId = null;
     state.fadeMultiplier = 1.0;
     
-    // Stop playback
     pauseAllSounds();
     state.isPlaying = false;
     applyAllVolumes();
@@ -766,14 +761,12 @@ function updateTimerTick() {
     DOM.timerTimeText.textContent = 'Sleep well 🌙';
     if (DOM.fadeNotice) DOM.fadeNotice.classList.add('hidden');
 
-    // Reset chips to continuous
     setSleepTimer(0);
     updateMasterUI();
     updateMediaSession();
     return;
   }
 
-  // Format time text (HH:MM:SS or MM:SS)
   const hrs = Math.floor(secondsRemaining / 3600);
   const mins = Math.floor((secondsRemaining % 3600) / 60);
   const secs = secondsRemaining % 60;
@@ -784,67 +777,19 @@ function updateTimerTick() {
     DOM.timerTimeText.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   }
 
-  // Smooth Master Volume Fadeout in the final seconds
   if (secondsRemaining <= state.timer.fadeSeconds && state.isPlaying) {
-    // Linear fade down to 0
     state.fadeMultiplier = Math.max(0, secondsRemaining / state.timer.fadeSeconds);
     applyAllVolumes();
-
-    if (DOM.fadeNotice) {
-      DOM.fadeNotice.classList.remove('hidden');
-    }
+    if (DOM.fadeNotice) DOM.fadeNotice.classList.remove('hidden');
   } else {
     state.fadeMultiplier = 1.0;
-    if (DOM.fadeNotice) {
-      DOM.fadeNotice.classList.add('hidden');
-    }
+    if (DOM.fadeNotice) DOM.fadeNotice.classList.add('hidden');
   }
 }
 
-/**
- * ==========================================================================
- * Podcast Bedtime Queue Module
- * Supports custom audio URLs, RSS feeds, ended event transition,
- * 4-second ambient volume fade-in, and seamless MediaSession lock-screen updates.
- * ==========================================================================
- */
-
-const CURATED_PODCASTS = {
-  'friday-night-comedy': {
-    title: 'Friday Night Comedy from BBC Radio 4',
-    podcastName: 'BBC Radio 4',
-    feedUrl: 'https://podcasts.files.bbci.co.uk/p02pc9pj.rss',
-    itunesId: '265307784',
-    coverUrl: 'icons/icon-192.png'
-  },
-  'no-such-thing-as-a-fish': {
-    title: 'No Such Thing As A Fish',
-    podcastName: 'QI Researchers',
-    feedUrl: 'https://audioboom.com/channels/2399216.rss',
-    itunesId: '840986946',
-    coverUrl: 'https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/6f/9b/4c/6f9b4c39-3c1a-d7c7-9264-b0ed14579e08/mza_7947053701740283670.png/600x600bb.jpg'
-  },
-  'inside-science': {
-    title: 'BBC Inside Science',
-    podcastName: 'BBC Radio 4',
-    feedUrl: 'https://podcasts.files.bbci.co.uk/b036f7w2.rss',
-    itunesId: '670199157',
-    coverUrl: 'icons/icon-192.png'
-  }
-};
-
-const KNOWN_ITUNES_IDS = {
-  'https://audioboom.com/channels/2399216.rss': '840986946',
-  'audioboom.com/channels/2399216': '840986946',
-  'https://podcasts.files.bbci.co.uk/p02pc9pj.rss': '265307784',
-  'https://podcasts.files.bbci.co.uk/b036f7w2.rss': '670199157'
-};
-
-/**
- * ==========================================================================
- * LocalStorage Playback Position Persistence & Timed Transition Engine
- * ==========================================================================
- */
+// ============================================================================
+// Podcast & Local MP3 Module
+// ============================================================================
 const STORAGE_KEY_POSITIONS = 'sleep_timed_mp3_positions';
 
 function getSavedPositions() {
@@ -865,9 +810,9 @@ function saveMp3Position(fileKey, currentTime, title) {
   };
   try {
     localStorage.setItem(STORAGE_KEY_POSITIONS, JSON.stringify(positions));
-  } catch (e) {
-    console.warn('[LocalStorage] Position save error:', e);
-  }
+  } catch (e) {}
+
+  updateStoredFilePositionInDB(fileKey, currentTime);
 }
 
 function getSavedPosition(fileKey) {
@@ -876,10 +821,9 @@ function getSavedPosition(fileKey) {
   return positions[fileKey]?.position || 0;
 }
 
-function checkAndShowResumeNotice(fileKey) {
+function checkAndShowResumeNotice(fileKey, explicitPos = null) {
   if (!fileKey || !DOM.mp3ResumeNotice) return;
-  const savedPos = getSavedPosition(fileKey);
-  // Show prompt if saved position is at least 5 seconds in
+  const savedPos = explicitPos !== null ? explicitPos : getSavedPosition(fileKey);
   if (savedPos && savedPos > 5) {
     state.timedTransition.savedPosition = savedPos;
     if (DOM.mp3ResumeTime) {
@@ -892,14 +836,42 @@ function checkAndShowResumeNotice(fileKey) {
   }
 }
 
-function renderRecentSavedMp3s() {
+async function renderRecentSavedMp3s() {
   if (!DOM.savedMp3sContainer || !DOM.savedMp3sList) return;
-  const positions = getSavedPositions();
-  const entries = Object.entries(positions)
-    .sort((a, b) => (b[1].updatedAt || 0) - (a[1].updatedAt || 0))
-    .slice(0, 5);
 
-  if (entries.length === 0) {
+  const storedFiles = await getAllStoredLocalFilesFromDB();
+  const savedPositions = getSavedPositions();
+
+  // Combine stored files from IndexedDB and saved URL streams
+  const items = [];
+  storedFiles.forEach((fileRec) => {
+    items.push({
+      key: fileRec.key,
+      title: fileRec.name.replace(/\.[^/.]+$/, ''),
+      position: fileRec.lastPosition || savedPositions[fileRec.key]?.position || 0,
+      updatedAt: fileRec.updatedAt || 0,
+      isLocalStored: true,
+      blob: fileRec.blob,
+      sizeStr: (fileRec.size / (1024 * 1024)).toFixed(1) + ' MB'
+    });
+  });
+
+  Object.entries(savedPositions).forEach(([key, posData]) => {
+    if (key.startsWith('url_') && !items.some((it) => it.key === key)) {
+      items.push({
+        key: key,
+        title: posData.title || key.replace(/^url_/, ''),
+        position: posData.position || 0,
+        updatedAt: posData.updatedAt || 0,
+        isLocalStored: false,
+        sizeStr: 'Web Stream'
+      });
+    }
+  });
+
+  items.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+  if (items.length === 0) {
     DOM.savedMp3sContainer.classList.add('hidden');
     DOM.savedMp3sList.innerHTML = '';
     return;
@@ -908,40 +880,99 @@ function renderRecentSavedMp3s() {
   DOM.savedMp3sContainer.classList.remove('hidden');
   DOM.savedMp3sList.innerHTML = '';
 
-  entries.forEach(([key, item]) => {
-    if (!item.position || item.position <= 5) return;
+  items.slice(0, 8).forEach((item) => {
     const card = document.createElement('div');
     card.className = 'recent-mp3-item';
     card.innerHTML = `
       <div class="recent-mp3-info">
-        <div class="recent-mp3-title">${escapeHtml(item.title || key)}</div>
-        <div class="recent-mp3-meta">Saved position: ${formatDuration(item.position)}</div>
+        <div class="recent-mp3-title">${escapeHtml(item.title)}</div>
+        <div class="recent-mp3-meta">${item.sizeStr} &bull; Saved: ${formatDuration(item.position)}</div>
       </div>
-      <button class="btn-ep-play" type="button">Resume</button>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <button class="btn-ep-play btn-resume-file" type="button">▶ Resume</button>
+        ${item.isLocalStored ? `<button class="btn-delete-saved" type="button" title="Remove from device storage">✕</button>` : ''}
+      </div>
     `;
 
-    card.querySelector('.btn-ep-play').addEventListener('click', () => {
-      if (key.startsWith('url_')) {
-        const url = key.replace(/^url_/, '');
+    card.querySelector('.btn-resume-file').addEventListener('click', async () => {
+      if (item.isLocalStored) {
+        const fileRec = await getStoredLocalFileFromDB(item.key);
+        if (fileRec && fileRec.blob) {
+          const objectUrl = URL.createObjectURL(fileRec.blob);
+          queuePodcastEpisode({
+            title: item.title,
+            podcastName: 'Saved Local Audio',
+            audioUrl: objectUrl,
+            fileKey: item.key,
+            coverUrl: 'icons/icon-192.png'
+          });
+          if (item.position > 0) {
+            DOM.audioPodcast.currentTime = item.position;
+          }
+        }
+      } else if (item.key.startsWith('url_')) {
+        const url = item.key.replace(/^url_/, '');
         queuePodcastEpisode({
-          title: item.title || 'Audio Stream',
+          title: item.title,
           podcastName: 'Resumed Stream',
           audioUrl: url,
-          fileKey: key,
+          fileKey: item.key,
           coverUrl: 'icons/icon-192.png'
         });
-        DOM.audioPodcast.currentTime = item.position;
-      } else if (state.timedTransition.fileKey === key) {
-        DOM.audioPodcast.currentTime = item.position;
-        DOM.audioPodcast.play();
-      } else {
-        alert(`To resume "${item.title}", please select the audio file from your device.`);
+        if (item.position > 0) {
+          DOM.audioPodcast.currentTime = item.position;
+        }
       }
       if (DOM.podcastModal) DOM.podcastModal.close();
     });
 
+    const delBtn = card.querySelector('.btn-delete-saved');
+    if (delBtn) {
+      delBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await deleteStoredFileFromDB(item.key);
+        renderRecentSavedMp3s();
+      });
+    }
+
     DOM.savedMp3sList.appendChild(card);
   });
+}
+
+/**
+ * On App Launch: Check for the last remembered local audio file and restore it
+ */
+async function restoreLastRememberedAudio() {
+  renderRecentSavedMp3s();
+  try {
+    const lastKey = localStorage.getItem('sleep_last_local_file_key');
+    if (!lastKey) return;
+
+    const fileRec = await getStoredLocalFileFromDB(lastKey);
+    if (!fileRec || !fileRec.blob) return;
+
+    const objectUrl = URL.createObjectURL(fileRec.blob);
+    const cleanTitle = fileRec.name.replace(/\.[^/.]+$/, '');
+    const savedPos = fileRec.lastPosition || getSavedPosition(lastKey);
+
+    state.podcast.isActive = true;
+    state.podcast.episodeTitle = cleanTitle;
+    state.podcast.podcastName = 'Remembered Local Audio';
+    state.podcast.coverUrl = 'icons/icon-192.png';
+    state.podcast.audioUrl = objectUrl;
+
+    state.timedTransition.fileKey = lastKey;
+    state.timedTransition.savedPosition = savedPos;
+
+    DOM.audioPodcast.src = objectUrl;
+    DOM.audioPodcast.load();
+
+    checkAndShowResumeNotice(lastKey, savedPos);
+    updatePodcastUI();
+    updateMediaSession();
+  } catch (err) {
+    console.warn('[Restore] Could not restore last audio file:', err);
+  }
 }
 
 function updateTimedCountdownUI(remainingSec) {
@@ -993,20 +1024,58 @@ function setTimedDuration(minutes) {
   }
 }
 
+/**
+ * Prime target ambient sounds on user gesture so background transition is guaranteed on mobile
+ */
+function primeTargetAmbientMix(targetKey) {
+  const target = targetKey || (DOM.podcastTransitionTarget ? DOM.podcastTransitionTarget.value : 'deep-rest');
+  const targetSounds = getTargetSoundIds(target);
+
+  targetSounds.forEach((id) => {
+    const s = state.sounds[id];
+    if (s && s.el) {
+      s.el.volume = 0;
+      const p = s.el.play();
+      if (p !== undefined) {
+        p.catch(() => {});
+      }
+    }
+  });
+}
+
+function getTargetSoundIds(target) {
+  if (target === 'deep-rest') return ['rain-calm', 'brown-noise'];
+  if (target === 'rain-calm') return ['rain-calm'];
+  if (target === 'thunderstorm') return ['thunderstorm', 'rain-calm'];
+  if (target === 'rain-light') return ['rain-light'];
+  if (target === 'ocean-waves') return ['ocean-waves'];
+  if (target === 'river-stream') return ['river-stream'];
+  if (target === 'brown-noise') return ['brown-noise'];
+  if (target === 'white-noise') return ['white-noise'];
+  if (target === 'current') {
+    const active = Object.keys(state.sounds).filter((id) => state.sounds[id].isActive);
+    return active.length > 0 ? active : ['rain-calm', 'brown-noise'];
+  }
+  return ['rain-calm', 'brown-noise'];
+}
+
 function initPodcastModule() {
   if (!DOM.audioPodcast) return;
 
   state.podcast.audioEl = DOM.audioPodcast;
   let lastThrottleSaveTime = 0;
 
-  // Track playback state changes
   DOM.audioPodcast.addEventListener('play', () => {
     state.podcast.isPlaying = true;
     state.timedTransition.lastCurrentTime = DOM.audioPodcast.currentTime;
     updatePodcastUI();
 
-    // Pause any ambient sounds so primary audio plays cleanly alone
-    pauseAllSounds();
+    // In this user gesture, prime target ambient elements at 0 volume so iOS/Android allows them later!
+    primeTargetAmbientMix();
+
+    // Mute ambient sound playback so local MP3 plays cleanly alone
+    state.fadeMultiplier = 0.0;
+    applyAllVolumes();
     state.isPlaying = false;
     updateMasterUI();
     updateMediaSession();
@@ -1014,7 +1083,6 @@ function initPodcastModule() {
 
   DOM.audioPodcast.addEventListener('pause', () => {
     state.podcast.isPlaying = false;
-    // Save position immediately on pause
     if (state.timedTransition.fileKey && DOM.audioPodcast.currentTime > 0) {
       saveMp3Position(state.timedTransition.fileKey, DOM.audioPodcast.currentTime, state.podcast.episodeTitle);
     }
@@ -1022,7 +1090,7 @@ function initPodcastModule() {
     updateMediaSession();
   });
 
-  // Track playback progress via timeupdate event so it remains accurate when phone screen is locked
+  // timeupdate runs continuously in background with mobile screen locked
   DOM.audioPodcast.addEventListener('timeupdate', () => {
     if (!DOM.audioPodcast.duration) return;
     const cur = DOM.audioPodcast.currentTime;
@@ -1035,18 +1103,17 @@ function initPodcastModule() {
       DOM.podcastCurTime.textContent = formatDuration(cur);
     }
 
-    // Auto-save position to localStorage every 2 seconds
+    // Auto-save position every 2 seconds
     const nowSec = performance.now() / 1000;
     if (state.timedTransition.fileKey && (nowSec - lastThrottleSaveTime >= 2.0)) {
       lastThrottleSaveTime = nowSec;
       saveMp3Position(state.timedTransition.fileKey, cur, state.podcast.episodeTitle);
     }
 
-    // ACCURATE LOCK-SCREEN TRACKING: accumulate real playback seconds via timeupdate
+    // Accurate background tracking via timeupdate
     if (state.timedTransition.enabled && state.timedTransition.targetDurationSec > 0 && !DOM.audioPodcast.paused) {
       if (state.timedTransition.lastCurrentTime !== null) {
         const delta = cur - state.timedTransition.lastCurrentTime;
-        // Step within normal playback rate
         if (delta > 0 && delta < 2.5) {
           state.timedTransition.listenedSec += delta;
         }
@@ -1056,7 +1123,7 @@ function initPodcastModule() {
       const remainingSec = Math.max(0, state.timedTransition.targetDurationSec - state.timedTransition.listenedSec);
       updateTimedCountdownUI(remainingSec);
 
-      // When the target time is reached, smoothly crossfade over 5 seconds into ambient sound!
+      // When target duration is reached, trigger the smooth 5s crossfade into ambient sounds!
       if (remainingSec <= 0 && !state.timedTransition.isCrossfading) {
         trigger5sCrossfade('Timed sleep duration reached');
       }
@@ -1074,40 +1141,37 @@ function initPodcastModule() {
     }
   });
 
-  // Listen for ended event on the audio element (when file completes before timer)
+  // Track finished before timer
   DOM.audioPodcast.addEventListener('ended', () => {
-    console.log('[Podcast] audio ended event fired! Seamlessly crossfading into ambient sleep sounds over 5s...');
     trigger5sCrossfade('Track finished');
   });
 }
 
 /**
- * Smoothly crossfade over 5 seconds from primary audio into continuous ambient sleep sounds.
- * Updates navigator.mediaSession metadata upon crossfade to reflect the ambient sound.
+ * Smooth 5-Second Equal-Power Crossfade from Primary Audio to Continuous Ambient Sleep Sounds
+ * Uses setInterval (NOT requestAnimationFrame) so it executes reliably with the phone screen locked.
  */
 function trigger5sCrossfade(reasonText = 'Timed sleep transition') {
   if (state.timedTransition.isCrossfading) return;
   state.timedTransition.isCrossfading = true;
 
-  console.log(`[Timed Transition] ${reasonText}. Smoothly crossfading over 5 seconds into ambient sleep sounds...`);
+  console.log(`[Timed Transition] ${reasonText}. Crossfading over 5 seconds into ambient sleep sounds...`);
 
-  // 1. Determine target ambient mix
   const target = DOM.podcastTransitionTarget ? DOM.podcastTransitionTarget.value : 'deep-rest';
   activateTargetSleepMix(target);
 
-  // 2. Start ambient audio looping at zero volume
+  // Start active ambient sounds
   state.fadeMultiplier = 0.0;
   applyAllVolumes();
   state.isPlaying = true;
   playAllActiveSounds();
   updateMasterUI();
 
-  // 3. Immediately update mediaSession metadata to reflect ambient soundscape
+  // Update MediaSession
   state.podcast.isActive = false;
   updateMediaSession();
 
-  // 4. Update UI banner and badge
-  showPodcastTransitionNotice(`${reasonText} &bull; Crossfading into ambient sleep sounds over 5s...`);
+  showPodcastTransitionNotice(`${reasonText} &bull; Crossfading into ambient sleep sounds...`);
   if (DOM.timedCountdownBadge) {
     DOM.timedCountdownBadge.classList.add('is-crossfading');
     if (DOM.timedCountdownText) {
@@ -1115,17 +1179,20 @@ function trigger5sCrossfade(reasonText = 'Timed sleep transition') {
     }
   }
 
-  // 5. Smooth 5-Second Equal-Power Crossfade
+  // 5-second interval crossfade (runs smoothly in background when screen is off)
   const CROSSFADE_MS = 5000;
   const startTimestamp = performance.now();
   const initialPrimaryVol = DOM.audioPodcast.volume || 1.0;
 
-  function crossfadeStep(now) {
-    const elapsed = now - startTimestamp;
+  if (state.timedTransition.crossfadeIntervalId) {
+    clearInterval(state.timedTransition.crossfadeIntervalId);
+  }
+
+  state.timedTransition.crossfadeIntervalId = setInterval(() => {
+    const elapsed = performance.now() - startTimestamp;
     const progress = Math.min(1.0, elapsed / CROSSFADE_MS);
 
-    // Natural equal-power acoustic curve:
-    // primary: cos(p * PI / 2), ambient: sin(p * PI / 2)
+    // Equal-power curve
     const primaryGain = Math.cos(progress * (Math.PI / 2));
     const ambientGain = Math.sin(progress * (Math.PI / 2));
 
@@ -1133,27 +1200,24 @@ function trigger5sCrossfade(reasonText = 'Timed sleep transition') {
     state.fadeMultiplier = ambientGain;
     applyAllVolumes();
 
-    if (progress < 1.0 && state.timedTransition.isCrossfading) {
-      requestAnimationFrame(crossfadeStep);
-    } else {
+    if (progress >= 1.0) {
+      clearInterval(state.timedTransition.crossfadeIntervalId);
+      state.timedTransition.crossfadeIntervalId = null;
       finalizeCrossfade();
     }
-  }
+  }, 100);
 
   function finalizeCrossfade() {
-    if (!state.timedTransition.isCrossfading) return;
     state.timedTransition.isCrossfading = false;
 
-    // Pause primary audio and restore full element volume
     DOM.audioPodcast.pause();
     DOM.audioPodcast.volume = 1.0;
     state.podcast.isPlaying = false;
 
-    // Ambient noise is now at full master volume
+    // Ambient noise is at full volume
     state.fadeMultiplier = 1.0;
     applyAllVolumes();
 
-    // Save final position in localStorage
     if (state.timedTransition.fileKey) {
       saveMp3Position(state.timedTransition.fileKey, DOM.audioPodcast.currentTime, state.podcast.episodeTitle);
     }
@@ -1168,21 +1232,10 @@ function trigger5sCrossfade(reasonText = 'Timed sleep transition') {
     updatePodcastUI();
     updateMediaSession();
     renderRecentSavedMp3s();
-    console.log('[Timed Transition] 5-second crossfade completed.');
   }
-
-  requestAnimationFrame(crossfadeStep);
-
-  // Safety fallback timeout in case phone lock screen throttles requestAnimationFrame
-  setTimeout(() => {
-    if (state.timedTransition.isCrossfading) {
-      finalizeCrossfade();
-    }
-  }, CROSSFADE_MS + 250);
 }
 
 function activateTargetSleepMix(target) {
-  // Reset existing active sounds if switching
   if (target !== 'current') {
     Object.keys(state.sounds).forEach((id) => {
       state.sounds[id].isActive = false;
@@ -1190,31 +1243,38 @@ function activateTargetSleepMix(target) {
   }
 
   if (target === 'deep-rest') {
+    state.sounds['rain-calm'].isActive = true;
+    state.sounds['rain-calm'].volume = 80;
     state.sounds['brown-noise'].isActive = true;
-    state.sounds['brown-noise'].volume = 80;
-    state.sounds['rain'].isActive = true;
-    state.sounds['rain'].volume = 75;
-  } else if (target === 'rain') {
-    state.sounds['rain'].isActive = true;
-    state.sounds['rain'].volume = 80;
+    state.sounds['brown-noise'].volume = 75;
+  } else if (target === 'rain-calm') {
+    state.sounds['rain-calm'].isActive = true;
+    state.sounds['rain-calm'].volume = 80;
+  } else if (target === 'thunderstorm') {
+    state.sounds['thunderstorm'].isActive = true;
+    state.sounds['thunderstorm'].volume = 70;
+    state.sounds['rain-calm'].isActive = true;
+    state.sounds['rain-calm'].volume = 65;
+  } else if (target === 'rain-light') {
+    state.sounds['rain-light'].isActive = true;
+    state.sounds['rain-light'].volume = 70;
+  } else if (target === 'ocean-waves') {
+    state.sounds['ocean-waves'].isActive = true;
+    state.sounds['ocean-waves'].volume = 75;
+  } else if (target === 'river-stream') {
+    state.sounds['river-stream'].isActive = true;
+    state.sounds['river-stream'].volume = 70;
   } else if (target === 'brown-noise') {
     state.sounds['brown-noise'].isActive = true;
     state.sounds['brown-noise'].volume = 80;
   } else if (target === 'white-noise') {
     state.sounds['white-noise'].isActive = true;
     state.sounds['white-noise'].volume = 70;
-  } else if (target === 'cozy-storm') {
-    state.sounds['rain'].isActive = true;
-    state.sounds['rain'].volume = 70;
-    state.sounds['rain-thunder'].isActive = true;
-    state.sounds['rain-thunder'].volume = 65;
-    state.sounds['brown-noise'].isActive = true;
-    state.sounds['brown-noise'].volume = 40;
   } else if (target === 'current') {
     const hasAny = Object.values(state.sounds).some((s) => s.isActive);
     if (!hasAny) {
+      state.sounds['rain-calm'].isActive = true;
       state.sounds['brown-noise'].isActive = true;
-      state.sounds['rain'].isActive = true;
     }
   }
 
@@ -1224,7 +1284,7 @@ function activateTargetSleepMix(target) {
 function showPodcastTransitionNotice(customMsg) {
   if (!DOM.podcastTransitionNotice) return;
   if (customMsg && DOM.podcastTransitionText) {
-    DOM.podcastTransitionText.textContent = customMsg;
+    DOM.podcastTransitionText.innerHTML = customMsg;
   }
   DOM.podcastTransitionNotice.classList.remove('hidden');
   setTimeout(() => {
@@ -1250,13 +1310,8 @@ function updatePodcastUI() {
     }
 
     if (DOM.podcastPlayIcon && DOM.podcastPauseIcon) {
-      if (state.podcast.isPlaying) {
-        DOM.podcastPlayIcon.classList.add('hidden');
-        DOM.podcastPauseIcon.classList.remove('hidden');
-      } else {
-        DOM.podcastPlayIcon.classList.remove('hidden');
-        DOM.podcastPauseIcon.classList.add('hidden');
-      }
+      DOM.podcastPlayIcon.classList.toggle('hidden', state.podcast.isPlaying);
+      DOM.podcastPauseIcon.classList.toggle('hidden', !state.podcast.isPlaying);
     }
   } else {
     DOM.podcastEmptyState.classList.remove('hidden');
@@ -1267,7 +1322,7 @@ function updatePodcastUI() {
 function queuePodcastEpisode(options) {
   state.podcast.isActive = true;
   state.podcast.episodeTitle = options.title || 'Bedtime Episode';
-  state.podcast.podcastName = options.podcastName || 'Bedtime Story';
+  state.podcast.podcastName = options.podcastName || 'Bedtime Audio';
   state.podcast.coverUrl = options.coverUrl || 'icons/icon-192.png';
   state.podcast.audioUrl = options.audioUrl;
 
@@ -1281,12 +1336,10 @@ function queuePodcastEpisode(options) {
   DOM.audioPodcast.currentTime = 0;
   DOM.audioPodcast.load();
 
-  // Reset countdown UI
   if (state.timedTransition.enabled && state.timedTransition.targetDurationSec > 0) {
     updateTimedCountdownUI(state.timedTransition.targetDurationSec);
   }
 
-  // Check if we have a saved resume position in localStorage
   checkAndShowResumeNotice(fileKey);
 
   DOM.audioPodcast.play().catch((err) => {
@@ -1298,11 +1351,20 @@ function queuePodcastEpisode(options) {
   renderRecentSavedMp3s();
 }
 
-function handleLocalFileSelected(file) {
+/**
+ * Handle local file selection: Save entire file into IndexedDB and queue playback
+ */
+async function handleLocalFileSelected(file) {
   if (!file) return;
-  const objectUrl = URL.createObjectURL(file);
+
   const fileKey = `local_${file.name}_${file.size}`;
   const cleanTitle = file.name.replace(/\.[^/.]+$/, '');
+
+  // 1. Save file in IndexedDB so it is remembered permanently!
+  await saveLocalFileToDB(fileKey, file, 0);
+
+  // 2. Create blob URL and queue
+  const objectUrl = URL.createObjectURL(file);
 
   queuePodcastEpisode({
     title: cleanTitle,
@@ -1330,8 +1392,32 @@ function escapeHtml(str) {
 }
 
 /**
- * Fetch and parse podcast RSS XML feed with CORS proxy fallbacks
+ * Curated Podcasts
  */
+const CURATED_PODCASTS = {
+  'friday-night-comedy': {
+    title: 'Friday Night Comedy from BBC Radio 4',
+    podcastName: 'BBC Radio 4',
+    feedUrl: 'https://podcasts.files.bbci.co.uk/p02pc9pj.rss',
+    itunesId: '265307784',
+    coverUrl: 'icons/icon-192.png'
+  },
+  'no-such-thing-as-a-fish': {
+    title: 'No Such Thing As A Fish',
+    podcastName: 'QI Researchers',
+    feedUrl: 'https://audioboom.com/channels/2399216.rss',
+    itunesId: '840986946',
+    coverUrl: 'https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/6f/9b/4c/6f9b4c39-3c1a-d7c7-9264-b0ed14579e08/mza_7947053701740283670.png/600x600bb.jpg'
+  },
+  'inside-science': {
+    title: 'BBC Inside Science',
+    podcastName: 'BBC Radio 4',
+    feedUrl: 'https://podcasts.files.bbci.co.uk/b036f7w2.rss',
+    itunesId: '670199157',
+    coverUrl: 'icons/icon-192.png'
+  }
+};
+
 function renderEpisodeCards(episodes, podcastTitle, podcastImage) {
   if (!episodes || episodes.length === 0) {
     DOM.rssStatusMessage.classList.remove('loading');
@@ -1396,14 +1482,11 @@ async function fetchFromItunes(itunesId) {
       return true;
     }
   } catch (e) {
-    console.warn('[RSS] Apple Podcasts directory lookup fallback warning:', e);
+    console.warn('[RSS] Apple Podcasts directory lookup warning:', e);
   }
   return false;
 }
 
-/**
- * Fetch and parse podcast episodes from native RSS XML or Apple Podcasts directory API (with full browser CORS support)
- */
 async function fetchRssFeed(feedUrl, explicitItunesId = null) {
   if (!feedUrl) return;
 
@@ -1413,16 +1496,13 @@ async function fetchRssFeed(feedUrl, explicitItunesId = null) {
   DOM.rssEpisodesContainer.classList.add('hidden');
   DOM.rssEpisodesContainer.innerHTML = '';
 
-  // Determine potential iTunes ID for CORS-free lookup
-  const itunesId = explicitItunesId || KNOWN_ITUNES_IDS[feedUrl] || (feedUrl.includes('2399216') ? '840986946' : null);
+  const itunesId = explicitItunesId || (feedUrl.includes('2399216') ? '840986946' : null);
 
-  // 1. If it's a known non-CORS feed like Audioboom with an iTunes ID, try iTunes lookup directly for instant load
   if (itunesId && (feedUrl.includes('audioboom.com') || feedUrl.includes('2399216'))) {
     const loaded = await fetchFromItunes(itunesId);
     if (loaded) return;
   }
 
-  // 2. Direct RSS fetch (e.g. BBC feeds support native CORS with Access-Control-Allow-Origin: *)
   let xmlText = null;
   const fetchUrls = [
     feedUrl,
@@ -1442,12 +1522,9 @@ async function fetchRssFeed(feedUrl, explicitItunesId = null) {
           break;
         }
       }
-    } catch (e) {
-      // Continue to next fallback
-    }
+    } catch (e) {}
   }
 
-  // 3. If XML was retrieved, parse standard RSS items
   if (xmlText) {
     try {
       const parser = new DOMParser();
@@ -1475,64 +1552,35 @@ async function fetchRssFeed(feedUrl, explicitItunesId = null) {
           return;
         }
       }
-    } catch (parseErr) {
-      console.warn('[RSS] XML parse failed, checking fallback...', parseErr);
-    }
+    } catch (parseErr) {}
   }
 
-  // 4. Fallback: Lookup via Apple Podcasts API (CORS enabled for all major podcasts)
   if (itunesId) {
     const loaded = await fetchFromItunes(itunesId);
     if (loaded) return;
   }
 
-  // 5. Try searching Apple Podcasts directory if query might be podcast title or feed
-  try {
-    const cleanQuery = feedUrl.replace(/https?:\/\//, '').replace(/\.(rss|xml).*/, '').replace(/[^a-zA-Z0-9 ]/g, ' ').trim();
-    if (cleanQuery.length > 3) {
-      const searchRes = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(cleanQuery)}&entity=podcast&limit=1`, {
-        signal: AbortSignal.timeout ? AbortSignal.timeout(4000) : undefined
-      });
-      if (searchRes.ok) {
-        const searchData = await searchRes.json();
-        const foundId = searchData.results?.[0]?.collectionId;
-        if (foundId) {
-          const loaded = await fetchFromItunes(foundId);
-          if (loaded) return;
-        }
-      }
-    }
-  } catch (searchErr) {
-    console.warn('[RSS] Directory search fallback warning:', searchErr);
-  }
-
-  // Final failure message
   DOM.rssStatusMessage.classList.remove('loading');
   DOM.rssStatusMessage.classList.add('error');
   DOM.rssStatusMessage.textContent = 'Could not load RSS feed. Please check the URL or try a direct audio stream URL.';
 }
 
-/**
- * navigator.mediaSession API Integration
- * Enables mobile lock-screen & notification center play/pause controls
- * Seamlessly handles transition between podcast and ambient sleep sounds
- */
+// ============================================================================
+// MediaSession API Integration (Lock Screen & Notification Center)
+// ============================================================================
 function initMediaSession() {
   if (!('mediaSession' in navigator)) return;
-
-  // Initial update
   updateMediaSession();
 }
 
 function updateMediaSession() {
   if (!('mediaSession' in navigator)) return;
 
-  // 1. If Podcast is actively playing or queued:
   if (state.podcast.isPlaying || (state.podcast.isActive && !state.isPlaying)) {
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: state.podcast.episodeTitle || 'Bedtime Podcast',
-      artist: state.podcast.podcastName || 'Sleep Podcast Queue',
-      album: 'Bedtime Stories & Rest',
+      title: state.podcast.episodeTitle || 'Bedtime Audio',
+      artist: state.podcast.podcastName || 'Sleep Audio Queue',
+      album: 'Rest & Relaxation',
       artwork: [
         { src: state.podcast.coverUrl || 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
         { src: state.podcast.coverUrl || 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }
@@ -1541,7 +1589,6 @@ function updateMediaSession() {
 
     navigator.mediaSession.playbackState = state.podcast.isPlaying ? 'playing' : 'paused';
 
-    // Podcast lock screen controls:
     navigator.mediaSession.setActionHandler('play', () => {
       DOM.audioPodcast.play();
     });
@@ -1566,19 +1613,17 @@ function updateMediaSession() {
     return;
   }
 
-  // 2. Ambient Sleep Sound Controls (when podcast is not active):
+  // Ambient Sleep Sounds Controls
   const activeNames = SOUNDS_CONFIG
     .filter((cfg) => state.sounds[cfg.id]?.isActive)
     .map((cfg) => cfg.name);
 
-  const titleText = activeNames.length > 0 
-    ? activeNames.join(' + ') 
-    : 'Sleep Noise Mixer';
+  const titleText = activeNames.length > 0 ? activeNames.join(' + ') : 'Sleep Noise Mixer';
 
   navigator.mediaSession.metadata = new MediaMetadata({
     title: titleText,
     artist: 'Sleep Sounds Sanctuary',
-    album: 'Deep Rest & Relaxation',
+    album: 'Deep Rest & Sleep',
     artwork: [
       { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
       { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }
@@ -1587,12 +1632,8 @@ function updateMediaSession() {
 
   navigator.mediaSession.playbackState = state.isPlaying ? 'playing' : 'paused';
 
-  navigator.mediaSession.setActionHandler('play', () => {
-    handleMasterToggle();
-  });
-  navigator.mediaSession.setActionHandler('pause', () => {
-    handleMasterToggle();
-  });
+  navigator.mediaSession.setActionHandler('play', handleMasterToggle);
+  navigator.mediaSession.setActionHandler('pause', handleMasterToggle);
   navigator.mediaSession.setActionHandler('seekbackward', null);
   navigator.mediaSession.setActionHandler('seekforward', null);
   navigator.mediaSession.setActionHandler('stop', () => {
@@ -1603,9 +1644,6 @@ function updateMediaSession() {
   });
 }
 
-/**
- * Toggle Bed Mode (Ultra-Dim Amber filter)
- */
 function toggleBedMode() {
   state.bedMode = !state.bedMode;
   applyBedMode();
@@ -1622,16 +1660,14 @@ function applyBedMode() {
   }
 }
 
-/**
- * Bind DOM Event Listeners
- */
+// ============================================================================
+// Event Listeners Binding
+// ============================================================================
 function bindEvents() {
-  // Master Play / Pause
   if (DOM.masterPlayBtn) {
     DOM.masterPlayBtn.addEventListener('click', handleMasterToggle);
   }
 
-  // Master Volume Range
   if (DOM.masterVolumeRange) {
     DOM.masterVolumeRange.addEventListener('input', (e) => {
       state.masterVolume = parseInt(e.target.value, 10);
@@ -1643,7 +1679,6 @@ function bindEvents() {
     });
   }
 
-  // Master Mute
   if (DOM.masterMuteBtn) {
     DOM.masterMuteBtn.addEventListener('click', () => {
       state.masterMuted = !state.masterMuted;
@@ -1654,12 +1689,10 @@ function bindEvents() {
     });
   }
 
-  // Bed Mode
   if (DOM.bedModeBtn) {
     DOM.bedModeBtn.addEventListener('click', toggleBedMode);
   }
 
-  // Quick Presets
   DOM.presetButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       const preset = btn.getAttribute('data-preset');
@@ -1667,7 +1700,6 @@ function bindEvents() {
     });
   });
 
-  // Timer chips
   DOM.timerButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       const min = parseInt(btn.getAttribute('data-minutes'), 10);
@@ -1675,13 +1707,13 @@ function bindEvents() {
     });
   });
 
-  // Podcast Queue Listeners
+  // Podcast / Audio Modal
   if (DOM.openPodcastModalBtn && DOM.podcastModal) {
     DOM.openPodcastModalBtn.addEventListener('click', () => {
       DOM.podcastModal.showModal();
+      renderRecentSavedMp3s();
     });
 
-    // Light-dismiss click outside fallback
     if (!('closedBy' in HTMLDialogElement.prototype)) {
       DOM.podcastModal.addEventListener('click', (e) => {
         const rect = DOM.podcastModal.getBoundingClientRect();
@@ -1695,6 +1727,7 @@ function bindEvents() {
   if (DOM.emptyQueueBtn && DOM.podcastModal) {
     DOM.emptyQueueBtn.addEventListener('click', () => {
       DOM.podcastModal.showModal();
+      renderRecentSavedMp3s();
     });
   }
 
@@ -1740,12 +1773,15 @@ function bindEvents() {
       DOM.audioPodcast.src = '';
       state.podcast.isActive = false;
       state.podcast.isPlaying = false;
+      try {
+        localStorage.removeItem('sleep_last_local_file_key');
+      } catch (e) {}
       updatePodcastUI();
       updateMediaSession();
     });
   }
 
-  // "Crossfade to Sleep Sound" test button: manually triggers transition
+  // Crossfade test button
   if (DOM.podcastEndNowBtn) {
     DOM.podcastEndNowBtn.addEventListener('click', () => {
       trigger5sCrossfade('Manual test crossfade');
@@ -1790,7 +1826,6 @@ function bindEvents() {
     });
   }
 
-  // Custom Minutes Set Button
   if (DOM.btnApplyTimedCustom && DOM.timedCustomInput) {
     DOM.btnApplyTimedCustom.addEventListener('click', () => {
       const min = parseInt(DOM.timedCustomInput.value, 10);
@@ -1800,7 +1835,7 @@ function bindEvents() {
     });
   }
 
-  // Local MP3 File pickers (empty state + modal)
+  // Local MP3 File pickers (Empty State & Modal)
   if (DOM.quickLocalMp3Input) {
     DOM.quickLocalMp3Input.addEventListener('change', (e) => {
       if (e.target.files && e.target.files[0]) {
@@ -1870,12 +1905,10 @@ function bindEvents() {
       const p = CURATED_PODCASTS[pid];
       if (p) {
         if (p.feedUrl) {
-          // Switch to RSS tab and auto fetch with CORS-friendly iTunes ID fallback
           DOM.tabRssBtn.click();
           DOM.rssFeedInput.value = p.feedUrl;
           fetchRssFeed(p.feedUrl, p.itunesId);
         } else {
-          // Direct audio
           queuePodcastEpisode(p);
           if (DOM.podcastModal) DOM.podcastModal.close();
         }
@@ -1883,22 +1916,16 @@ function bindEvents() {
     });
   });
 
-  // Modal RSS fetch button
   if (DOM.fetchRssBtn && DOM.rssFeedInput) {
     DOM.fetchRssBtn.addEventListener('click', () => {
       const url = DOM.rssFeedInput.value.trim();
-      if (url) {
-        fetchRssFeed(url);
-      }
+      if (url) fetchRssFeed(url);
     });
     DOM.rssFeedInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        DOM.fetchRssBtn.click();
-      }
+      if (e.key === 'Enter') DOM.fetchRssBtn.click();
     });
   }
 
-  // Modal Custom Audio URL button
   if (DOM.loadCustomAudioBtn && DOM.customAudioUrl) {
     DOM.loadCustomAudioBtn.addEventListener('click', () => {
       const url = DOM.customAudioUrl.value.trim();
@@ -1922,12 +1949,12 @@ function bindEvents() {
     });
   }
 
-  // Online / Offline detection
+  // Online / Offline status
   window.addEventListener('online', updateNetworkStatus);
   window.addEventListener('offline', updateNetworkStatus);
   updateNetworkStatus();
 
-  // PWA beforeinstallprompt handler
+  // PWA beforeinstallprompt
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     window.deferredPrompt = e;
@@ -1954,7 +1981,6 @@ function bindEvents() {
     });
   }
 
-  // Support shortcut action from manifest.json: ?action=play
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get('action') === 'play') {
     handleMasterToggle();
@@ -1964,26 +1990,16 @@ function bindEvents() {
 async function updateNetworkStatus() {
   if (!DOM.offlineBadge) return;
 
-  // Verify that all 6 audio files are cached in CacheStorage
   let allAudioCached = false;
   if ('caches' in window) {
     try {
-      const cache = await caches.open('sleep-noise-v2');
-      const audioPaths = [
-        'audio/brown-noise.mp3',
-        'audio/rain.mp3',
-        'audio/white-noise.mp3',
-        'audio/pink-noise.mp3',
-        'audio/rain-thunder.mp3',
-        'audio/gentle-rain.mp3'
-      ];
+      const cache = await caches.open(CACHE_NAME || 'sleep-noise-v6');
+      const audioPaths = SOUNDS_CONFIG.map((cfg) => cfg.file);
       const matchChecks = await Promise.all(
         audioPaths.map((p) => cache.match(p, { ignoreSearch: true }))
       );
       allAudioCached = matchChecks.every((res) => Boolean(res));
-    } catch (e) {
-      // Ignore cache check errors
-    }
+    } catch (e) {}
   }
 
   if (!navigator.onLine) {
@@ -2006,7 +2022,7 @@ async function updateNetworkStatus() {
       </svg>
       <span class="status-dot" aria-hidden="true"></span>
     `;
-    DOM.offlineBadge.title = '100% offline ready: All 6 audio loops are pre-cached in storage.';
+    DOM.offlineBadge.title = '100% offline ready: All audio loops are pre-cached in storage.';
     DOM.offlineBadge.setAttribute('aria-label', '100% offline ready: All sounds cached');
   } else {
     DOM.offlineBadge.classList.remove('is-offline');
@@ -2021,9 +2037,6 @@ async function updateNetworkStatus() {
   }
 }
 
-/**
- * Service Worker Registration & Cache Monitoring
- */
 function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
@@ -2031,18 +2044,13 @@ function registerServiceWorker() {
 
       navigator.serviceWorker.register('./sw.js')
         .then((reg) => {
-          console.log('[SW] Service Worker registered with scope:', reg.scope);
-
-          // Proactively check for updates immediately on launch
           reg.update().catch(() => {});
 
-          // Listen for new service worker installation
           reg.addEventListener('updatefound', () => {
             const newWorker = reg.installing;
             if (newWorker) {
               newWorker.addEventListener('statechange', () => {
                 if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                  console.log('[SW] New version installed and ready.');
                   if (!refreshing && !state.isPlaying) {
                     refreshing = true;
                     window.location.reload();
@@ -2052,7 +2060,6 @@ function registerServiceWorker() {
             }
           });
 
-          // Periodic check to verify audio cache completeness
           setTimeout(updateNetworkStatus, 1500);
           setTimeout(updateNetworkStatus, 4000);
         })
@@ -2061,7 +2068,6 @@ function registerServiceWorker() {
         });
 
       navigator.serviceWorker.addEventListener('controllerchange', () => {
-        console.log('[SW] Service Worker controller changed.');
         updateNetworkStatus();
         if (!refreshing && !state.isPlaying) {
           refreshing = true;
@@ -2072,9 +2078,6 @@ function registerServiceWorker() {
   }
 }
 
-/**
- * Persistence with localStorage
- */
 function savePreferences() {
   try {
     const serializedSounds = {};
@@ -2117,11 +2120,11 @@ function loadStoredPreferences() {
     }
     if (prefs.sounds && typeof prefs.sounds === 'object') {
       Object.keys(prefs.sounds).forEach((id) => {
-        state.sounds[id] = {
-          volume: prefs.sounds[id].volume ?? 70,
-          muted: prefs.sounds[id].muted ?? false,
-          isActive: prefs.sounds[id].isActive ?? false
-        };
+        if (state.sounds[id]) {
+          state.sounds[id].volume = prefs.sounds[id].volume ?? 70;
+          state.sounds[id].muted = prefs.sounds[id].muted ?? false;
+          state.sounds[id].isActive = prefs.sounds[id].isActive ?? false;
+        }
       });
     }
   } catch (err) {

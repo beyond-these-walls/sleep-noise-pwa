@@ -29,21 +29,18 @@
   <!-- Screen Dimmer Overlay for Bed Mode -->
   <div id="bedModeOverlay" class="bed-mode-overlay" aria-hidden="true"></div>
 
-  <!-- Dual-channel audio elements for 100% gapless continuous staggered looping -->
+  <!-- Clean audio elements with seamless hardware looping for background playback -->
   <div id="audioContainer" class="visually-hidden" aria-hidden="true">
-    <audio id="audio-brown-noise-a" src="audio/brown-noise.mp3" loop preload="auto" playsinline></audio>
-    <audio id="audio-brown-noise-b" src="audio/brown-noise.mp3" loop preload="auto" playsinline></audio>
-    <audio id="audio-rain-a" src="audio/rain.mp3" loop preload="auto" playsinline></audio>
-    <audio id="audio-rain-b" src="audio/rain.mp3" loop preload="auto" playsinline></audio>
-    <audio id="audio-white-noise-a" src="audio/white-noise.mp3" loop preload="auto" playsinline></audio>
-    <audio id="audio-white-noise-b" src="audio/white-noise.mp3" loop preload="auto" playsinline></audio>
-    <audio id="audio-pink-noise-a" src="audio/pink-noise.mp3" loop preload="auto" playsinline></audio>
-    <audio id="audio-pink-noise-b" src="audio/pink-noise.mp3" loop preload="auto" playsinline></audio>
-    <audio id="audio-rain-thunder-a" src="audio/rain-thunder.mp3" loop preload="auto" playsinline></audio>
-    <audio id="audio-rain-thunder-b" src="audio/rain-thunder.mp3" loop preload="auto" playsinline></audio>
-    <audio id="audio-gentle-rain-a" src="audio/gentle-rain.mp3" loop preload="auto" playsinline></audio>
-    <audio id="audio-gentle-rain-b" src="audio/gentle-rain.mp3" loop preload="auto" playsinline></audio>
-    <!-- Non-looping episodic podcast audio element -->
+    <audio id="audio-rain-calm" src="audio/rain-calm.mp3" loop preload="auto" playsinline></audio>
+    <audio id="audio-thunderstorm" src="audio/thunderstorm.mp3" loop preload="auto" playsinline></audio>
+    <audio id="audio-rain-light" src="audio/rain-light.mp3" loop preload="auto" playsinline></audio>
+    <audio id="audio-rain-distant-thunder" src="audio/rain-distant-thunder.mp3" loop preload="auto" playsinline></audio>
+    <audio id="audio-ocean-waves" src="audio/ocean-waves.mp3" loop preload="auto" playsinline></audio>
+    <audio id="audio-river-stream" src="audio/river-stream.mp3" loop preload="auto" playsinline></audio>
+    <audio id="audio-brown-noise" src="audio/brown-noise.mp3" loop preload="auto" playsinline></audio>
+    <audio id="audio-white-noise" src="audio/white-noise.mp3" loop preload="auto" playsinline></audio>
+    <audio id="audio-pink-noise" src="audio/pink-noise.mp3" loop preload="auto" playsinline></audio>
+    <!-- Non-looping primary audio element for podcasts, audiobooks and local MP3s -->
     <audio id="audio-podcast" preload="metadata" playsinline></audio>
   </div>
 
@@ -319,11 +316,14 @@
             <span>When episode ends, fade into:</span>
           </label>
           <select id="podcastTransitionTarget" class="target-select" aria-label="Soundscape to fade in after episode">
-            <option value="deep-rest">🛌 Deep Rest (Brown Noise + Rain)</option>
-            <option value="rain">🌧️ Calming Rain</option>
+            <option value="deep-rest">🛌 Deep Rest (Calming Rain + Brown Noise)</option>
+            <option value="rain-calm">🌧️ Calming Rain</option>
+            <option value="thunderstorm">⛈️ Cozy Thunderstorm</option>
+            <option value="rain-light">💧 Gentle Rain</option>
+            <option value="ocean-waves">🌊 Ocean Waves</option>
+            <option value="river-stream">🏞️ Forest Stream</option>
             <option value="brown-noise">🟤 Brown Noise</option>
             <option value="white-noise">⚪ White Noise</option>
-            <option value="cozy-storm">⛈️ Cozy Thunder &amp; Rain</option>
             <option value="current">Current Active Sound Mix</option>
           </select>
         </div>

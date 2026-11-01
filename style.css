@@ -1886,6 +1886,24 @@ dialog.podcast-modal::backdrop {
   margin-top: 1px;
 }
 
+.btn-delete-saved {
+  background: transparent;
+  border: 1px solid var(--border-medium);
+  color: var(--text-muted);
+  border-radius: var(--radius-full);
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  cursor: pointer;
+  min-height: 28px;
+  transition: all 0.15s ease;
+}
+
+.btn-delete-saved:hover {
+  color: #fca5a5;
+  border-color: #ef4444;
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
 /* ==========================================================================
    Forced Colors Support (Windows High Contrast Mode)
    ========================================================================== */

@@ -1,14 +1,16 @@
 // Sleep Noise PWA - Service Worker with Full Offline Audio & HTTP Range Support
-const CACHE_NAME = 'sleep-noise-v5';
+const CACHE_NAME = 'sleep-noise-v6';
 
 const AUDIO_ASSETS = [
+  './audio/rain-calm.mp3',
+  './audio/thunderstorm.mp3',
+  './audio/rain-light.mp3',
+  './audio/rain-distant-thunder.mp3',
+  './audio/ocean-waves.mp3',
+  './audio/river-stream.mp3',
   './audio/brown-noise.mp3',
-  './audio/rain.mp3',
   './audio/white-noise.mp3',
-  './audio/pink-noise.mp3',
-  './audio/rain-thunder.mp3',
-  './audio/gentle-rain.mp3',
-  './audio/bedtime-story-sample.mp3'
+  './audio/pink-noise.mp3'
 ];
 
 const APP_SHELL_ASSETS = [

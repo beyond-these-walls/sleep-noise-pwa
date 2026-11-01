@@ -13,3 +13,6 @@ __pycache__/
 
 # Audio uncompressed scratch files
 *.wav
+
+# Raw downloaded source recordings (see tools/fetch_sounds.ps1)
+tools/.src/
